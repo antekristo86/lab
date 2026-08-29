@@ -20,13 +20,32 @@
   }
   html.light body { color: #FFFF00; }
 
-  /* the hero: the headline owns the whole first viewport. monumental
-     type, everything else is black space */
+  /* the hero: the gate owns the whole first viewport, the headline
+     stands on it. the image is the future, the type walks through */
   header {
+    position: relative;
     min-height: 100svh;
-    display: flex; flex-direction: column; justify-content: center;
+    display: flex; flex-direction: column; justify-content: flex-end;
     box-sizing: border-box;
-    max-width: 720px; margin: 0 auto; padding: 32px;
+    padding: 32px;
+  }
+  header .img {
+    position: absolute; inset: 0;
+    background: url('./hero.jpg') center / cover no-repeat;
+  }
+  /* the type needs ground: the image sinks into black at the bottom */
+  header .img::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,0.82) 100%);
+  }
+  html.light header .img::after {
+    background: linear-gradient(180deg, rgba(0,0,80,0) 45%, rgba(0,0,80,0.85) 100%);
+  }
+  header .hgroup {
+    position: relative; z-index: 1;
+    max-width: 720px; margin: 0 auto; width: 100%;
+    box-sizing: border-box;
+    padding-bottom: 6svh;
   }
   .date {
     font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
@@ -94,8 +113,11 @@
 </head>
 <body>
 <header>
-  <p class="date">08.29 &mdash; Ante Kristo</p>
-  <h1>Relearn how to&nbsp;think</h1>
+  <div class="img" aria-hidden="true"></div>
+  <div class="hgroup">
+    <p class="date">08.29 &mdash; Ante Kristo</p>
+    <h1>Relearn how to&nbsp;think</h1>
+  </div>
 </header>
 <main>
   <p>My biggest lesson from two years of working intensively with AI has surprisingly little to do with AI. I have to relearn how to think.</p>
