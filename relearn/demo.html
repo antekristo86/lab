@@ -29,14 +29,18 @@
     box-sizing: border-box;
     padding: 32px;
   }
-  header canvas.img {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    display: block;
+  header .img {
+    position: absolute; inset: 0;
+    background: url('./hero.jpg') center / cover no-repeat;
   }
-  /* the whole hero is one led panel: image, shade and type are
-     composed into a single texture and rastered together. the dom
-     type stays for structure, the panel does the showing */
-  header .hgroup { visibility: hidden; }
+  /* the type needs ground: the image sinks into black at the bottom */
+  header .img::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,0.82) 100%);
+  }
+  html.light header .img::after {
+    background: linear-gradient(180deg, rgba(0,0,80,0) 45%, rgba(0,0,80,0.85) 100%);
+  }
   header .hgroup {
     position: relative; z-index: 1;
     max-width: 720px; margin: 0 auto; width: 100%;
@@ -109,7 +113,7 @@
 </head>
 <body>
 <header>
-  <canvas class="img" id="ledimg" aria-hidden="true"></canvas>
+  <div class="img" aria-hidden="true"></div>
   <div class="hgroup">
     <p class="date">08.29 &mdash; Ante Kristo</p>
     <h1>Relearn how to&nbsp;think</h1>
@@ -218,160 +222,10 @@ window.__recall = () => {
 };
 window.__busy = () => recalling;
 
-// the theme is known before the panel composes itself
+// ---- theme: the host's light/dark reaches into the drop ----
 let anteTheme = 'dark';
 try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
-
-// ---- the hero as an led panel: the same 1px-dot raster as the site's
-// wordmark, and the same hardware flicker. every cell breathes on its
-// own clock, now and then a single dot stutters ----
-const lc = document.getElementById('ledimg');
-const lgl = lc.getContext('webgl', { antialias: false });
-const LVS = `
-attribute vec2 p;
-void main() { gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
-const LFS = `
-precision mediump float;
-uniform sampler2D uTex;
-uniform vec2 uRes;    // canvas device px
-uniform vec2 uImg;    // image px
-uniform float uDot;   // device px per led
-uniform float uTime;
-uniform vec3 uBg;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
-  float imgAsp = uImg.x / uImg.y;
-  float boxAsp = uRes.x / uRes.y;
-  vec2 ratio = (boxAsp > imgAsp) ? vec2(1.0, imgAsp / boxAsp) : vec2(boxAsp / imgAsp, 1.0);
-  vec3 col = texture2D(uTex, (uv - 0.5) * ratio + 0.5).rgb;
-  float period = uDot * 2.0;
-  vec2 cell = floor(gl_FragCoord.xy / period);
-  vec2 f = gl_FragCoord.xy - cell * period;
-  float on = (1.0 - step(uDot, f.x)) * (1.0 - step(uDot, f.y));
-  float h = hash(cell + 9.7);
-  float breathe = 0.8 + 0.2 * sin(uTime * (0.6 + h * 1.8) + h * 6.2831);
-  float stut = 1.0 - 0.75 * step(0.991, hash(cell + floor(uTime * 8.0) * 0.131));
-  // a quarter of the surface is lit, so each led burns brighter,
-  // like the hardware it pretends to be
-  gl_FragColor = vec4(mix(uBg, col * 1.9 * breathe * stut, on), 1.0);
-}`;
-function lcompile(type, src) {
-  const sh = lgl.createShader(type);
-  lgl.shaderSource(sh, src); lgl.compileShader(sh);
-  return sh;
-}
-const lprog = lgl.createProgram();
-lgl.attachShader(lprog, lcompile(lgl.VERTEX_SHADER, LVS));
-lgl.attachShader(lprog, lcompile(lgl.FRAGMENT_SHADER, LFS));
-lgl.linkProgram(lprog);
-lgl.useProgram(lprog);
-lgl.bindBuffer(lgl.ARRAY_BUFFER, lgl.createBuffer());
-lgl.bufferData(lgl.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1, 0,1, 1,0, 1,1]), lgl.STATIC_DRAW);
-const lp = lgl.getAttribLocation(lprog, 'p');
-lgl.enableVertexAttribArray(lp);
-lgl.vertexAttribPointer(lp, 2, lgl.FLOAT, false, 0, 0);
-const uResL = lgl.getUniformLocation(lprog, 'uRes');
-const uImgL = lgl.getUniformLocation(lprog, 'uImg');
-const uDotL = lgl.getUniformLocation(lprog, 'uDot');
-const uTimeL = lgl.getUniformLocation(lprog, 'uTime');
-const uBgL = lgl.getUniformLocation(lprog, 'uBg');
-lgl.pixelStorei(lgl.UNPACK_FLIP_Y_WEBGL, true);
-let ltex = null;
-const limg = new Image();
-limg.src = './hero.jpg';
-limg.onload = () => { refreshPanel(); };
-let ldpr = 1;
-function lresize() {
-  ldpr = Math.min(devicePixelRatio, 3);
-  const r = lc.getBoundingClientRect();
-  lc.width = Math.round(r.width * ldpr);
-  lc.height = Math.round(r.height * ldpr);
-  lgl.viewport(0, 0, lc.width, lc.height);
-  refreshPanel();
-}
-addEventListener('resize', lresize);
-
-// one frame of truth: photo, shade and headline drawn into a single
-// texture, so the raster and the flicker treat them as one surface
-const comp = document.createElement('canvas');
-function refreshPanel() {
-  if (!limg.naturalWidth || !lc.width) return;
-  const light = typeof anteTheme !== 'undefined' && anteTheme === 'light';
-  comp.width = lc.width; comp.height = lc.height;
-  const x = comp.getContext('2d');
-  x.scale(ldpr, ldpr);
-  const W = lc.width / ldpr, H = lc.height / ldpr;
-  x.fillStyle = light ? '#000050' : '#000';
-  x.fillRect(0, 0, W, H);
-  // the photo, cover
-  const sc = Math.max(W / limg.naturalWidth, H / limg.naturalHeight);
-  const dw = limg.naturalWidth * sc, dh = limg.naturalHeight * sc;
-  x.drawImage(limg, (W - dw) / 2, (H - dh) / 2, dw, dh);
-  // the shade the type stands on
-  const g = x.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0.45, light ? 'rgba(0,0,80,0)' : 'rgba(0,0,0,0)');
-  g.addColorStop(1, light ? 'rgba(0,0,80,0.85)' : 'rgba(0,0,0,0.82)');
-  x.fillStyle = g;
-  x.fillRect(0, 0, W, H);
-  // the type, mirroring the hidden dom exactly
-  const avail = W - 64;
-  const colW = Math.min(720, avail);
-  const left = 32 + (avail - colW) / 2;
-  const fs = Math.min(116, Math.max(52, W * 0.13));
-  const lineH = fs * 0.94;
-  x.textBaseline = 'alphabetic';
-  x.font = '700 ' + fs + 'px Geist, sans-serif';
-  try { x.letterSpacing = (-0.025 * fs) + 'px'; } catch (e) {}
-  const lines = [];
-  let cur = '';
-  for (const w of ['RELEARN', 'HOW', 'TO THINK']) {
-    const t = cur ? cur + ' ' + w : w;
-    if (x.measureText(t).width > colW && cur) { lines.push(cur); cur = w; }
-    else cur = t;
-  }
-  if (cur) lines.push(cur);
-  const bottomPad = 32 + H * 0.06;
-  const firstBase = H - bottomPad - (lines.length - 1) * lineH - fs * 0.06;
-  x.fillStyle = light ? '#FFFF00' : '#fff';
-  lines.forEach((l, i) => x.fillText(l, left, firstBase + i * lineH));
-  // the date line above
-  x.font = '400 13px Geist, sans-serif';
-  try { x.letterSpacing = (0.14 * 13) + 'px'; } catch (e) {}
-  x.fillStyle = light ? 'rgba(255,255,0,0.4)' : 'rgba(255,255,255,0.4)';
-  x.fillText('08.29 \u2014 ANTE KRISTO', left, firstBase - fs * 0.94 - 12);
-  try { x.letterSpacing = '0px'; } catch (e) {}
-  // hand it to the panel
-  if (!ltex) ltex = lgl.createTexture();
-  lgl.bindTexture(lgl.TEXTURE_2D, ltex);
-  lgl.texImage2D(lgl.TEXTURE_2D, 0, lgl.RGBA, lgl.RGBA, lgl.UNSIGNED_BYTE, comp);
-  lgl.texParameteri(lgl.TEXTURE_2D, lgl.TEXTURE_MIN_FILTER, lgl.LINEAR);
-  lgl.texParameteri(lgl.TEXTURE_2D, lgl.TEXTURE_MAG_FILTER, lgl.LINEAR);
-  lgl.texParameteri(lgl.TEXTURE_2D, lgl.TEXTURE_WRAP_S, lgl.CLAMP_TO_EDGE);
-  lgl.texParameteri(lgl.TEXTURE_2D, lgl.TEXTURE_WRAP_T, lgl.CLAMP_TO_EDGE);
-}
-lresize();
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshPanel);
-function lframe(t) {
-  // the panel only burns while it is on screen
-  if (ltex && scrollY < innerHeight) {
-    lgl.uniform2f(uResL, lc.width, lc.height);
-    lgl.uniform2f(uImgL, lc.width, lc.height);
-    lgl.uniform1f(uDotL, Math.max(1, Math.round(ldpr)));
-    lgl.uniform1f(uTimeL, t * 0.001);
-    const bg = anteTheme === 'light' ? [0, 0, 0.3137] : [0, 0, 0];
-    lgl.uniform3f(uBgL, bg[0], bg[1], bg[2]);
-    lgl.drawArrays(lgl.TRIANGLES, 0, 6);
-  }
-  requestAnimationFrame(lframe);
-}
-requestAnimationFrame(lframe);
-
-// ---- theme: the host's light/dark reaches into the drop ----
-function applyAnteTheme() {
-  document.documentElement.classList.toggle('light', anteTheme === 'light');
-  if (typeof refreshPanel === 'function') refreshPanel();
-}
+function applyAnteTheme() { document.documentElement.classList.toggle('light', anteTheme === 'light'); }
 addEventListener('message', e => { if (e.data && e.data.anteTheme) { anteTheme = e.data.anteTheme; applyAnteTheme(); } });
 applyAnteTheme();
 </script>
