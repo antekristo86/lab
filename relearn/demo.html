@@ -103,20 +103,6 @@
   html.light em, html.light .beat { color: rgba(255,255,0,0.5); }
   html.light blockquote { border-color: rgba(255,255,0,0.3); }
 
-  /* a soft floor and ceiling: the text dips under the host's chrome
-     instead of colliding with it, on the card and in fullscreen alike */
-  body::after {
-    content: ''; position: fixed; left: 0; right: 0; bottom: 0;
-    height: 104px; pointer-events: none;
-    background: linear-gradient(180deg, rgba(0,0,0,0), #000 62%);
-  }
-  body::before {
-    content: ''; position: fixed; left: 0; right: 0; top: 0;
-    height: 88px; pointer-events: none; z-index: 1;
-    background: linear-gradient(0deg, rgba(0,0,0,0), #000 62%);
-  }
-  html.light body::after { background: linear-gradient(180deg, rgba(0,0,80,0), #000050 62%); }
-  html.light body::before { background: linear-gradient(0deg, rgba(0,0,80,0), #000050 62%); }
 </style>
 </head>
 <body>
