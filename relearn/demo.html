@@ -39,10 +39,12 @@
   figure.gate canvas { display: none; position: absolute; inset: 0; }
   html.light figure.gate img { visibility: hidden; }
   html.light figure.gate canvas { display: block; }
-  .date {
+  .topic {
     font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
     text-transform: uppercase; color: rgba(255,255,255,0.4);
-    margin: 0 0 28px;
+    /* optically flush with the headline: the big glyphs carry almost
+       no side bearing, the small type does, so the label steps right */
+    margin: 0 0 28px calc(clamp(52px, 13vw, 116px) * 0.045);
   }
   h1 {
     font-size: clamp(52px, 13vw, 116px);
@@ -80,7 +82,7 @@
     margin-top: 84px;
   }
 
-  html.light .date, html.light .end { color: rgba(255,255,0,0.4); }
+  html.light .topic, html.light .end { color: rgba(255,255,0,0.4); }
   html.light h2 { color: rgba(255,255,0,0.45); }
   html.light p, html.light blockquote { color: rgba(255,255,0,0.78); }
   html.light strong, html.light .beat strong { color: #FFFF00; }
@@ -105,7 +107,7 @@
 </head>
 <body>
 <header>
-  <p class="date">08.29 &mdash; Ante Kristo</p>
+  <p class="topic">AI / Thinking</p>
   <h1>Relearn how to&nbsp;think</h1>
 </header>
 <figure class="gate">
