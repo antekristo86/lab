@@ -170,17 +170,13 @@
   <p>I even catch myself asking people questions out of habit that I could have explored with AI first. Not because AI always has the better answer. It doesn't. But often I'm asking someone else before I've even taken a minute to understand the problem myself.</p>
   <p>So one rule I'm trying to internalize is: <strong>Don't use your first "I can't" as a conclusion. Use it as a prompt.</strong></p>
 
-  <h2>Sometimes the task itself is outdated</h2>
-  <p>This article is actually a good example. I decided I wanted to write more. Not short posts, but deeper pieces where I could properly develop an idea. Immediately, I felt some of the old friction.</p>
-  <p>Writing a good long-form article is hard. How do I structure it? How long is this going to take? How do I get everything in my head onto a blank page?</p>
-  <p>Then I realized I was accepting the task as given: <em>I want an article, therefore I have to sit down and write an article.</em> But writing wasn't really the goal. I had an idea in my head that I thought was worth sharing.</p>
-  <p>So I changed the process. I started a conversation with ChatGPT and asked it to interview me. One question at a time. I talked. It challenged parts of my thinking. I disagreed with some of its conclusions. We refined hypotheses, found examples, removed things that sounded smart but didn't actually hold up, and slowly extracted the argument from my head.</p>
-  <p>This article came out of that process. The outcome stayed the same. The way of getting there changed completely.</p>
-  <p>And I notice the same thing with much smaller tasks. I still catch myself doing repetitive things manually simply because that's how I've always done them. There's no <em>"I can't do this"</em> reflex to catch. The task just feels normal.</p>
+  <h2>The harder habits to catch</h2>
+  <p>There's another version of this that I find even harder to notice. The things I don't think about at all.</p>
+  <p>I still catch myself doing repetitive things manually simply because that's how I've always done them. There's no <em>"I can't do this"</em> reflex to interrupt. No decision that something is too difficult. The task just feels normal. So I do it.</p>
+  <p>And increasingly, that itself feels like a signal. <em>Why am I still doing this myself?</em></p>
   <p><strong>Old thinking doesn't only stop us from doing new things. It keeps us doing old things the old way.</strong></p>
-  <p>Increasingly, I'm trying to catch those moments too: <em>Why am I still doing this myself?</em> Because I think this is another old assumption worth questioning:</p>
-  <p><strong>Stop assuming the old way of doing a task is still the way the outcome has to be produced.</strong></p>
-  <p>Start with what you actually want to happen. Then figure out the path.</p>
+  <p>Some of these things take five minutes. Some take thirty. None of them feel important enough to rethink. But repeated often enough, they become hours of work that probably shouldn't exist anymore.</p>
+  <p>The interesting part is that I don't need to know how to automate them. That would be the old question again. I only need to notice them long enough to ask whether they still need to be done this way.</p>
 
   <h2>Ask doesn't mean do</h2>
   <p>There's an obvious trap here. Once you realize how much you can suddenly attempt, it's easy to swing too far in the other direction. I do that too.</p>
@@ -240,7 +236,7 @@ window.__busy = () => recalling;
 // its own loudness over twelve minutes, measured once and carried in the
 // file, so nothing has to be decoded to show them. lit behind the
 // playhead, dim ahead. the word starts it, the sound is the scrubber ----
-const PEAKS = 'rfihchzii9n28pfgd924qgnip3loflfnnitcljleokdgjdlioikfjsgblhyaejipiiljmlklrjhcdepfige9kjrjfmlhrjhfkhmofmmkkpgci9rofhjfnooikkjmlkehejlgmpljrlpjmh4naihldmlfroohidnlkoqipjhlhmhlvlljmhvpcolqnqnmgkfrhhqi4p7a';
+const PEAKS = 'shoeh9vwbhcq2bljgge2c5qhphrcfgqjipktfwedtiiridghljietimatnneemjzge8plveq7eonnopmn8dglrlijk5jsoqmobydwkbqlnoojigenokjjthosthjlfmv9omsqtkii6ik9ljlmgoknrmlkileoqntkplcpngpmosmimolumlmteuvqmljgnonlmejlg9d';
 const au = document.getElementById('au');
 const word = document.getElementById('word');
 const wave = document.getElementById('wave');
@@ -328,7 +324,7 @@ function pframe(now) {
     g.fillRect(x, (wh - h) / 2, bw, h);
   }
   meta.textContent = (au.paused && au.currentTime < 0.1)
-    ? '12 min'
+    ? '11 min'
     : fmt(au.currentTime) + ' \u00b7 ' + fmt(au.duration || 0);
   requestAnimationFrame(pframe);
 }

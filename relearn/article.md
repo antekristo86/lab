@@ -59,27 +59,19 @@ I even catch myself asking people questions out of habit that I could have explo
 
 So one rule I'm trying to internalize is: **Don't use your first "I can't" as a conclusion. Use it as a prompt.**
 
-## Sometimes the task itself is outdated
+## The harder habits to catch
 
-This article is actually a good example. I decided I wanted to write more. Not short posts, but deeper pieces where I could properly develop an idea. Immediately, I felt some of the old friction.
+There's another version of this that I find even harder to notice. The things I don't think about at all.
 
-Writing a good long-form article is hard. How do I structure it? How long is this going to take? How do I get everything in my head onto a blank page?
+I still catch myself doing repetitive things manually simply because that's how I've always done them. There's no *"I can't do this"* reflex to interrupt. No decision that something is too difficult. The task just feels normal. So I do it.
 
-Then I realized I was accepting the task as given: *I want an article, therefore I have to sit down and write an article.* But writing wasn't really the goal. I had an idea in my head that I thought was worth sharing.
-
-So I changed the process. I started a conversation with ChatGPT and asked it to interview me. One question at a time. I talked. It challenged parts of my thinking. I disagreed with some of its conclusions. We refined hypotheses, found examples, removed things that sounded smart but didn't actually hold up, and slowly extracted the argument from my head.
-
-This article came out of that process. The outcome stayed the same. The way of getting there changed completely.
-
-And I notice the same thing with much smaller tasks. I still catch myself doing repetitive things manually simply because that's how I've always done them. There's no *"I can't do this"* reflex to catch. The task just feels normal.
+And increasingly, that itself feels like a signal. *Why am I still doing this myself?*
 
 **Old thinking doesn't only stop us from doing new things. It keeps us doing old things the old way.**
 
-Increasingly, I'm trying to catch those moments too: *Why am I still doing this myself?* Because I think this is another old assumption worth questioning:
+Some of these things take five minutes. Some take thirty. None of them feel important enough to rethink. But repeated often enough, they become hours of work that probably shouldn't exist anymore.
 
-**Stop assuming the old way of doing a task is still the way the outcome has to be produced.**
-
-Start with what you actually want to happen. Then figure out the path.
+The interesting part is that I don't need to know how to automate them. That would be the old question again. I only need to notice them long enough to ask whether they still need to be done this way.
 
 ## Ask doesn't mean do
 
