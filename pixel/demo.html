@@ -67,6 +67,7 @@ uniform float uCell;         // css px per pixel block
 uniform float uBoxTop;       // box top in viewport px
 uniform float uViewH;        // viewport height px
 uniform float uReach;        // how far above the bottom the effect spans
+uniform float uDuo;          // light theme: the image speaks blue and yellow
 varying vec2 vUv;
 
 float random(vec2 st){ return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
@@ -98,6 +99,10 @@ void main(){
   float pop = smoothstep(0.0, 0.1, p);
 
   vec3 rgb = mix(block, sharp, sharpen);
+  // the light theme rebuilds the photograph from the theme's own two
+  // colors: shadows sink into the blue, light rises into the yellow
+  float lum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  rgb = mix(rgb, mix(vec3(0.0, 0.0, 0.3137), vec3(1.0, 1.0, 0.0), lum), uDuo);
   gl_FragColor = vec4(rgb, pop);
 }`;
 
@@ -128,6 +133,7 @@ const uCell = gl.getUniformLocation(prog, 'uCell');
 const uBoxTop = gl.getUniformLocation(prog, 'uBoxTop');
 const uViewH = gl.getUniformLocation(prog, 'uViewH');
 const uReach = gl.getUniformLocation(prog, 'uReach');
+const uDuo = gl.getUniformLocation(prog, 'uDuo');
 
 gl.enable(gl.BLEND);
 gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -211,6 +217,7 @@ function frame() {
   gl.uniform2f(uView, innerWidth, innerHeight);
   gl.uniform1f(uViewH, innerHeight);
   gl.uniform1f(uReach, Math.min(300, innerHeight * 0.34));
+  gl.uniform1f(uDuo, anteTheme === 'light' ? 1 : 0);
   for (let i = 0; i < N; i++) {
     const tex = texs[i];
     if (!tex) continue;

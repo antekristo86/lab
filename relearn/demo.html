@@ -20,33 +20,25 @@
   }
   html.light body { color: #FFFF00; }
 
-  /* the hero: the gate owns the whole first viewport, the headline
-     stands on it. the image is the future, the type walks through */
+  /* the hero: the headline owns the whole first viewport. monumental
+     type, everything else is black space. the card shows exactly this */
   header {
-    position: relative;
     min-height: 100svh;
-    display: flex; flex-direction: column; justify-content: flex-end;
+    display: flex; flex-direction: column; justify-content: center;
     box-sizing: border-box;
-    padding: 32px;
+    max-width: 720px; margin: 0 auto; padding: 32px;
   }
-  header .img {
-    position: absolute; inset: 0;
-    background: url('./hero.jpg') center / cover no-repeat;
+  /* the gate: one full-bleed block after the hero. the first scroll
+     reveals it. in light it is rebuilt from the theme's own two colors */
+  figure.gate {
+    margin: 0; height: 78svh; position: relative;
   }
-  /* the type needs ground: the image sinks into black at the bottom */
-  header .img::after {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,0.82) 100%);
+  figure.gate img, figure.gate canvas {
+    display: block; width: 100%; height: 100%; object-fit: cover;
   }
-  html.light header .img::after {
-    background: linear-gradient(180deg, rgba(0,0,80,0) 45%, rgba(0,0,80,0.85) 100%);
-  }
-  header .hgroup {
-    position: relative; z-index: 1;
-    max-width: 720px; margin: 0 auto; width: 100%;
-    box-sizing: border-box;
-    padding-bottom: 6svh;
-  }
+  figure.gate canvas { display: none; position: absolute; inset: 0; }
+  html.light figure.gate img { visibility: hidden; }
+  html.light figure.gate canvas { display: block; }
   .date {
     font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
     text-transform: uppercase; color: rgba(255,255,255,0.4);
@@ -113,12 +105,13 @@
 </head>
 <body>
 <header>
-  <div class="img" aria-hidden="true"></div>
-  <div class="hgroup">
-    <p class="date">08.29 &mdash; Ante Kristo</p>
-    <h1>Relearn how to&nbsp;think</h1>
-  </div>
+  <p class="date">08.29 &mdash; Ante Kristo</p>
+  <h1>Relearn how to&nbsp;think</h1>
 </header>
+<figure class="gate">
+  <img src="./hero.jpg" alt="" />
+  <canvas aria-hidden="true"></canvas>
+</figure>
 <main>
   <p>My biggest lesson from two years of working intensively with AI has surprisingly little to do with AI. I have to relearn how to think.</p>
   <p>Not how to prompt better. Not which model to use. Not how to build agents. How I think about what is possible in the first place.</p>
@@ -222,10 +215,41 @@ window.__recall = () => {
 };
 window.__busy = () => recalling;
 
+// ---- the gate in the light theme: the same photograph, rebuilt from
+// the theme's own two colors. shadows sink into the blue, light rises
+// into the yellow. baked once, on demand ----
+const gateImg = document.querySelector('figure.gate img');
+const gateCv = document.querySelector('figure.gate canvas');
+let duoBaked = false;
+function bakeDuo() {
+  if (duoBaked || !gateImg.naturalWidth) return;
+  const w = Math.min(1600, gateImg.naturalWidth);
+  const h = Math.round(gateImg.naturalHeight * w / gateImg.naturalWidth);
+  gateCv.width = w; gateCv.height = h;
+  const x = gateCv.getContext('2d');
+  x.drawImage(gateImg, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h);
+  const px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const l = (px[i] * 0.2126 + px[i + 1] * 0.7152 + px[i + 2] * 0.0722) / 255;
+    px[i] = 255 * l;
+    px[i + 1] = 255 * l;
+    px[i + 2] = 80 * (1 - l);
+  }
+  x.putImageData(d, 0, 0);
+  duoBaked = true;
+}
+
 // ---- theme: the host's light/dark reaches into the drop ----
 let anteTheme = 'dark';
 try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
-function applyAnteTheme() { document.documentElement.classList.toggle('light', anteTheme === 'light'); }
+function applyAnteTheme() {
+  document.documentElement.classList.toggle('light', anteTheme === 'light');
+  if (anteTheme === 'light') {
+    if (gateImg.complete) bakeDuo();
+    else gateImg.addEventListener('load', bakeDuo, { once: true });
+  }
+}
 addEventListener('message', e => { if (e.data && e.data.anteTheme) { anteTheme = e.data.anteTheme; applyAnteTheme(); } });
 applyAnteTheme();
 </script>
