@@ -39,13 +39,28 @@
   figure.gate canvas { display: none; position: absolute; inset: 0; }
   html.light figure.gate img { visibility: hidden; }
   html.light figure.gate canvas { display: block; }
-  /* listen: one body of liquid. at rest it is a pill you can press, in
-     motion it stretches into its own timeline. same morph as the card
-     opening into the window, same springs. no icons, no widget */
-  .player {
-    max-width: 620px; margin: 0 auto; padding: 12vh 32px 0;
+  /* listen: the word is the button, the rule under it is the timeline.
+     the word says what a press will do, the line says how far you are */
+  .player { max-width: 620px; margin: 0 auto; padding: 12vh 32px 0; }
+  .word {
+    display: inline-block;
+    font-size: clamp(44px, 9vw, 72px); line-height: 1;
+    font-weight: 700; text-transform: uppercase; letter-spacing: -0.02em;
+    cursor: pointer; user-select: none;
+    color: rgba(255,255,255,0.45);
+    transition: color 0.2s ease;
+    transform-origin: 0% 100%;
   }
-  .player canvas { display: block; width: 100%; height: 40px; cursor: pointer; }
+  .word:hover, body.on .word { color: #fff; }
+  html.light .word { color: rgba(255,255,0,0.45); }
+  html.light .word:hover, html.light body.on .word { color: #FFFF00; }
+  .track {
+    position: relative; height: 2px; margin-top: 26px;
+    background: rgba(255,255,255,0.14); cursor: pointer;
+  }
+  .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #fff; }
+  html.light .track { background: rgba(255,255,0,0.14); }
+  html.light .track i { background: #FFFF00; }
   .player .meta {
     margin: 14px 0 0;
     font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
@@ -110,14 +125,15 @@
   <p class="topic">AI / Thinking</p>
   <h1>Relearn how to&nbsp;think</h1>
 </header>
-<audio id="au" src="./audio.mp3" preload="none"></audio>
+<audio id="au" src="./audio.mp3" preload="metadata"></audio>
 <figure class="gate">
   <img src="./hero.jpg" alt="" />
   <canvas aria-hidden="true"></canvas>
 </figure>
 <div class="player">
-  <canvas id="jelly" aria-label="listen to the article"></canvas>
-  <p class="meta" id="meta">Listen &middot; 12 min</p>
+  <span class="word" id="word" role="button" tabindex="0">Listen</span>
+  <div class="track" id="track"><i id="fill"></i></div>
+  <p class="meta" id="meta">12 min</p>
 </div>
 <main>
   <p>My biggest lesson from two years of working intensively with AI has surprisingly little to do with AI. I have to relearn how to think.</p>
@@ -222,113 +238,68 @@ window.__recall = () => {
 };
 window.__busy = () => recalling;
 
-// ---- listen: one body of liquid. pressing it stretches the pill into
-// the article's timeline, the same morph the card makes when it opens.
-// the spring overshoots, the volume stays honest: as it runs wide it
-// runs thin. pausing lets it contract, and it wobbles on arrival ----
+// ---- listen: the word says what a press will do, the rule under it is
+// the article's timeline. pressing gives like a real key, a spring lets
+// it back up. no icons ----
 const au = document.getElementById('au');
-const jc = document.getElementById('jelly');
-const jx = jc.getContext('2d');
+const word = document.getElementById('word');
+const track = document.getElementById('track');
+const fill = document.getElementById('fill');
 const meta = document.getElementById('meta');
 
-const PILL_W = 104, PILL_H = 34, TRACK_H = 5, H = 40;
-let jt = 0, jv = 0;          // 0 = pill, 1 = timeline
-let wob = 0, wobV = 0;       // the arrival wobble
-let jlast = 0, jdpr = 1, jw = 0;
-
-function jresize() {
-  jdpr = Math.min(devicePixelRatio, 3);
-  const r = jc.getBoundingClientRect();
-  jw = r.width;
-  jc.width = Math.round(r.width * jdpr);
-  jc.height = Math.round(H * jdpr);
-}
-addEventListener('resize', jresize);
-
+let sq = 0, sqV = 0, plast = 0;
 function fmt(t) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return m + ':' + String(s).padStart(2, '0');
 }
 
-jc.addEventListener('click', e => {
-  if (jt > 0.6 && !au.paused) {
-    // running: a press on the timeline seeks, a press on the far left stops
-    const x = e.clientX - jc.getBoundingClientRect().left;
-    if (x < 24) { au.pause(); return; }
-    if (au.duration) au.currentTime = Math.max(0, Math.min(1, (x - 12) / (jw - 24))) * au.duration;
-    wobV += 9;
-    return;
-  }
+word.addEventListener('click', () => {
+  sqV -= 7;
   au.paused ? au.play() : au.pause();
 });
+word.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); word.click(); }
+});
+track.addEventListener('click', e => {
+  if (!au.duration) return;
+  const r = track.getBoundingClientRect();
+  au.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * au.duration;
+});
+au.addEventListener('play', () => {
+  document.body.classList.add('on');
+  word.textContent = 'Pause';
+});
+au.addEventListener('pause', () => {
+  document.body.classList.remove('on');
+  word.textContent = au.currentTime > 0.5 ? 'Resume' : 'Listen';
+});
+au.addEventListener('ended', () => { au.currentTime = 0; word.textContent = 'Listen'; });
 
-au.addEventListener('play', () => { wobV += 26; });
-au.addEventListener('pause', () => { wobV += 20; });
-au.addEventListener('ended', () => { au.currentTime = 0; });
+function pframe(now) {
+  const dt = Math.min((now - plast) / 1000 || 0.016, 0.05);
+  plast = now;
+  sqV += (-320 * sq - 2 * Math.sqrt(320) * 0.5 * sqV) * dt;
+  sq += sqV * dt;
+  word.style.transform = 'scaleY(' + (1 + sq * 0.012) + ') scaleX(' + (1 - sq * 0.004) + ')';
 
-function jframe(now) {
-  const dt = Math.min((now - jlast) / 1000 || 0.016, 0.05);
-  jlast = now;
-  // the state spring: stiff, underdamped, so the stretch overshoots
-  const target = au.paused ? 0 : 1;
-  const k = 180, d = 2 * Math.sqrt(180) * 0.62;
-  jv += (k * (target - jt) - d * jv) * dt;
-  jt += jv * dt;
-  wobV += (-260 * wob - 2 * Math.sqrt(260) * 0.45 * wobV) * dt;
-  wob += wobV * dt;
-
-  const g = jx;
-  g.setTransform(jdpr, 0, 0, jdpr, 0, 0);
-  g.clearRect(0, 0, jw, H);
-
-  // geometry: width grows, height thins, the volume reads as constant
-  const w = PILL_W + (jw - PILL_W) * jt;
-  const h = Math.max(2, PILL_H + (TRACK_H - PILL_H) * jt + wob * 0.9);
-  const r = Math.min(h / 2, 22);
-  const x0 = 0;   // it grows rightward, off the text's own left edge
-  const y0 = (H - h) / 2;
-
-  const fg = (typeof anteTheme !== 'undefined' && anteTheme === 'light') ? '255,255,0' : '255,255,255';
-
-  // the body
-  g.fillStyle = 'rgba(' + fg + ',' + (0.14 + 0.24 * (1 - jt)) + ')';
-  g.beginPath();
-  g.roundRect(x0, y0, w, h, r);
-  g.fill();
-
-  // what has been heard: the liquid that has already passed
-  if (jt > 0.02 && au.duration) {
-    const p = au.currentTime / au.duration;
-    g.save();
-    g.beginPath();
-    g.roundRect(x0, y0, w, h, r);
-    g.clip();
-    g.fillStyle = 'rgba(' + fg + ',0.9)';
-    g.fillRect(x0, y0, w * p, h);
-    g.restore();
-  }
-  requestAnimationFrame(jframe);
+  if (au.duration) fill.style.width = (au.currentTime / au.duration * 100) + '%';
+  meta.textContent = (au.paused && au.currentTime < 0.1)
+    ? '12 min'
+    : fmt(au.currentTime) + ' \u00b7 ' + fmt(au.duration || 0);
+  requestAnimationFrame(pframe);
 }
+requestAnimationFrame(pframe);
 
-// the host closes the window on a tap unless the drop claims that spot.
-// the player is ours, everything else still closes as it should
+// the host closes the window on a tap unless the drop claims that spot
 window.__solid = (mx, my) => {
-  const r = jc.getBoundingClientRect();
   const x = mx * innerWidth, y = (1 - my) * innerHeight;
-  return x >= r.left - 8 && x <= r.right + 8 && y >= r.top - 10 && y <= r.bottom + 10;
+  for (const el of [word, track]) {
+    const r = el.getBoundingClientRect();
+    if (x >= r.left - 10 && x <= r.right + 10 && y >= r.top - 12 && y <= r.bottom + 12) return true;
+  }
+  return false;
 };
 
-function jinit() {
-  jresize();
-  requestAnimationFrame(jframe);
-  setInterval(() => {
-    if (!au.duration) return;
-    meta.textContent = au.paused && au.currentTime < 0.1
-      ? 'Listen \u00b7 12 min'
-      : fmt(au.currentTime) + ' \u00b7 ' + fmt(au.duration);
-  }, 250);
-}
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(jinit); else jinit();
 // ---- the gate in the light theme: the same photograph, rebuilt from
 // the theme's own two colors. shadows sink into the blue, light rises
 // into the yellow. baked once, on demand ----
