@@ -43,15 +43,17 @@
      bars are the recording, lit behind the playhead and dim ahead of it.
      press the word to start, press the sound to go somewhere */
   .player { max-width: 620px; margin: 0 auto; padding: 12vh 32px 0; }
-  .prow { display: flex; align-items: flex-end; gap: 20px; }
+  /* the word and the bars share one middle line. the bars are symmetric
+     around the canvas centre, so the caps are centred on it too */
+  .prow { display: flex; align-items: center; gap: 22px; height: 40px; }
   .word {
     flex: none;
-    font-size: 28px; line-height: 28px;
+    font-size: 28px; line-height: 40px;
     font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
     cursor: pointer; user-select: none;
     color: rgba(255,255,255,0.45);
     transition: color 0.18s ease;
-    transform-origin: 50% 100%;
+    transform-origin: 50% 50%;
   }
   .word:hover, body.on .word { color: #fff; }
   html.light .word { color: rgba(255,255,0,0.45); }
@@ -301,7 +303,8 @@ function pframe(now) {
   plast = now;
   sqV += (-320 * sq - 2 * Math.sqrt(320) * 0.5 * sqV) * dt;
   sq += sqV * dt;
-  word.style.transform = 'scale(' + (1 + sq * 0.01) + ')';
+  // caps sit a hair above the line box centre; 1px puts them on the axis
+  word.style.transform = 'translateY(1px) scale(' + (1 + sq * 0.01) + ')';
 
   if (!ww) wresize();
   const g = wx;
