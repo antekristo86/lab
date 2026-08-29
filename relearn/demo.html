@@ -39,20 +39,26 @@
   figure.gate canvas { display: none; position: absolute; inset: 0; }
   html.light figure.gate img { visibility: hidden; }
   html.light figure.gate canvas { display: block; }
-  /* listen: the word is the button and the timeline in one. it says
-     what a press will do, and it fills with what has been heard */
+  /* listen: the article's own voice, drawn as it actually sounds. the
+     bars are the recording, lit behind the playhead and dim ahead of it.
+     press the word to start, press the sound to go somewhere */
   .player { max-width: 620px; margin: 0 auto; padding: 12vh 32px 0; }
+  .prow { display: flex; align-items: flex-end; gap: 20px; }
   .word {
-    display: inline-block;
-    font-size: clamp(44px, 9vw, 72px); line-height: 1;
-    font-weight: 700; text-transform: uppercase; letter-spacing: -0.02em;
+    flex: none;
+    font-size: 28px; line-height: 28px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
     cursor: pointer; user-select: none;
-    -webkit-background-clip: text; background-clip: text;
-    color: transparent;
-    transform-origin: 0% 100%;
+    color: rgba(255,255,255,0.45);
+    transition: color 0.18s ease;
+    transform-origin: 50% 100%;
   }
+  .word:hover, body.on .word { color: #fff; }
+  html.light .word { color: rgba(255,255,0,0.45); }
+  html.light .word:hover, html.light body.on .word { color: #FFFF00; }
+  #wave { flex: 1 1 auto; display: block; height: 40px; cursor: pointer; }
   .player .meta {
-    margin: 20px 0 0;
+    margin: 16px 0 0;
     font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
     text-transform: uppercase; color: rgba(255,255,255,0.4);
     user-select: none;
@@ -121,7 +127,10 @@
   <canvas aria-hidden="true"></canvas>
 </figure>
 <div class="player">
-  <span class="word" id="word" role="button" tabindex="0">Listen</span>
+  <div class="prow">
+    <span class="word" id="word" role="button" tabindex="0">Listen</span>
+    <canvas id="wave" aria-label="seek within the recording"></canvas>
+  </div>
   <p class="meta" id="meta">12 min</p>
 </div>
 <main>
@@ -227,20 +236,49 @@ window.__recall = () => {
 };
 window.__busy = () => recalling;
 
-// ---- listen: the word says what a press will do, the rule under it is
-// the article's timeline. pressing gives like a real key, a spring lets
-// it back up. no icons ----
+// ---- listen: the recording drawn as it actually sounds. the bars are
+// its own loudness over twelve minutes, measured once and carried in the
+// file, so nothing has to be decoded to show them. lit behind the
+// playhead, dim ahead. the word starts it, the sound is the scrubber ----
+const PEAKS = 'rfihchzii9n28pfgd924qgnip3loflfnnitcljleokdgjdlioikfjsgblhyaejipiiljmlklrjhcdepfige9kjrjfmlhrjhfkhmofmmkkpgci9rofhjfnooikkjmlkehejlgmpljrlpjmh4naihldmlfroohidnlkoqipjhlhmhlvlljmhvpcolqnqnmgkfrhhqi4p7a';
 const au = document.getElementById('au');
 const word = document.getElementById('word');
+const wave = document.getElementById('wave');
+const wx = wave.getContext('2d');
 const meta = document.getElementById('meta');
 
-let sq = 0, sqV = 0, plast = 0, hover = false;
-word.addEventListener('pointerenter', () => { hover = true; });
-word.addEventListener('pointerleave', () => { hover = false; });
+let sq = 0, sqV = 0, plast = 0, hoverX = -1, dragging = false, wdpr = 1, ww = 0, wh = 40;
+
 function fmt(t) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return m + ':' + String(s).padStart(2, '0');
 }
+function wresize() {
+  wdpr = Math.min(devicePixelRatio, 3);
+  const r = wave.getBoundingClientRect();
+  ww = r.width;
+  wave.width = Math.round(r.width * wdpr);
+  wave.height = Math.round(wh * wdpr);
+}
+addEventListener('resize', wresize);
+
+function seekAt(clientX) {
+  if (!au.duration) return;
+  const r = wave.getBoundingClientRect();
+  au.currentTime = Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * au.duration;
+}
+wave.addEventListener('pointerdown', e => {
+  dragging = true;
+  wave.setPointerCapture(e.pointerId);
+  seekAt(e.clientX);
+  if (au.paused) au.play();
+});
+wave.addEventListener('pointermove', e => {
+  hoverX = e.clientX - wave.getBoundingClientRect().left;
+  if (dragging) seekAt(e.clientX);
+});
+wave.addEventListener('pointerup', () => { dragging = false; });
+wave.addEventListener('pointerleave', () => { hoverX = -1; dragging = false; });
 
 word.addEventListener('click', () => {
   sqV -= 7;
@@ -249,10 +287,13 @@ word.addEventListener('click', () => {
 word.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); word.click(); }
 });
-au.addEventListener('play', () => {
-  document.body.classList.add('on');
-  word.textContent = 'Pause';
+addEventListener('keydown', e => {
+  // fifteen seconds back and forward, the way every podcast app does it
+  if (!au.duration) return;
+  if (e.key === 'ArrowLeft') au.currentTime = Math.max(0, au.currentTime - 15);
+  if (e.key === 'ArrowRight') au.currentTime = Math.min(au.duration, au.currentTime + 15);
 });
+au.addEventListener('play', () => { document.body.classList.add('on'); word.textContent = 'Pause'; });
 au.addEventListener('pause', () => {
   document.body.classList.remove('on');
   word.textContent = au.currentTime > 0.5 ? 'Resume' : 'Listen';
@@ -264,31 +305,44 @@ function pframe(now) {
   plast = now;
   sqV += (-320 * sq - 2 * Math.sqrt(320) * 0.5 * sqV) * dt;
   sq += sqV * dt;
-  word.style.transform = 'scaleY(' + (1 + sq * 0.012) + ') scaleX(' + (1 - sq * 0.004) + ')';
+  word.style.transform = 'scale(' + (1 + sq * 0.01) + ')';
 
-  // the fill: what has been heard, written into the letters themselves.
-  // hovering lights the rest of the word without touching the fill
-  const p = au.duration ? au.currentTime / au.duration : 0;
-  const pct = (p * 100).toFixed(3) + '%';
+  if (!ww) wresize();
+  const g = wx;
+  g.setTransform(wdpr, 0, 0, wdpr, 0, 0);
+  g.clearRect(0, 0, ww, wh);
   const light = document.documentElement.classList.contains('light');
-  const on = light ? '255,255,0' : '255,255,255';
-  const rest = (hover || !au.paused) ? 0.42 : 0.28;
-  word.style.backgroundImage =
-    'linear-gradient(90deg,rgba(' + on + ',1) 0%,rgba(' + on + ',1) ' + pct +
-    ',rgba(' + on + ',' + rest + ') ' + pct + ',rgba(' + on + ',' + rest + ') 100%)';
-
+  const fg = light ? '255,255,0' : '255,255,255';
+  const n = PEAKS.length;
+  const gap = 2;
+  const bw = Math.max(1, (ww - (n - 1) * gap) / n);
+  const p = au.duration ? au.currentTime / au.duration : 0;
+  const head = p * ww;
+  for (let i = 0; i < n; i++) {
+    const v = parseInt(PEAKS[i], 36) / 35;
+    const h = Math.max(2, v * wh);
+    const x = i * (bw + gap);
+    const played = x + bw <= head;
+    const near = hoverX >= 0 && Math.abs(x + bw / 2 - hoverX) < 26;
+    g.fillStyle = 'rgba(' + fg + ',' + (played ? 0.95 : near ? 0.45 : 0.2) + ')';
+    g.fillRect(x, (wh - h) / 2, bw, h);
+  }
   meta.textContent = (au.paused && au.currentTime < 0.1)
     ? '12 min'
     : fmt(au.currentTime) + ' \u00b7 ' + fmt(au.duration || 0);
   requestAnimationFrame(pframe);
 }
+wresize();
 requestAnimationFrame(pframe);
 
 // the host closes the window on a tap unless the drop claims that spot
 window.__solid = (mx, my) => {
-  const r = word.getBoundingClientRect();
   const x = mx * innerWidth, y = (1 - my) * innerHeight;
-  return x >= r.left - 10 && x <= r.right + 10 && y >= r.top - 12 && y <= r.bottom + 12;
+  for (const el of [word, wave]) {
+    const r = el.getBoundingClientRect();
+    if (x >= r.left - 10 && x <= r.right + 10 && y >= r.top - 12 && y <= r.bottom + 12) return true;
+  }
+  return false;
 };
 
 // ---- the gate in the light theme: the same photograph, rebuilt from
