@@ -3,41 +3,35 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>jelly glass</title>
+<title>jelly stepper</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: crosshair; }
   canvas { display: block; width: 100vw; height: 100vh; }
-  #tune {
-    display: none; position: fixed; top: 20px; left: 20px; z-index: 5;
-    background: rgba(0,0,0,0.82); border: 1px solid rgba(255,255,255,0.18);
-    padding: 14px; width: 250px; max-height: 92vh; overflow: auto;
-    font: 11px ui-monospace, monospace; color: #fff; backdrop-filter: blur(8px);
-  }
-  #tune.on { display: block; }
-  #tune label { display: block; margin: 7px 0 1px; color: rgba(255,255,255,0.55); }
-  #tune input { width: 100%; accent-color: #fff; }
-  #tune .v { float: right; color: #fff; }
-  #tune .btn { margin-top: 12px; cursor: pointer; color: rgba(255,255,255,0.6); }
-  #tune .btn:hover { color: #fff; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="tune"></div>
 <script>
-// jelly glass. the ios 27 siri lens as one fragment shader:
-// refraction with chromatic split, a prismatic rim, a moving sheen.
-// the lens follows the cursor with inertia.
+// jelly stepper. the same liquid as the jelly glass drop, counting.
+// the value lives behind the glass on a wheel; the minus and the plus
+// are droplets that are born out of the body and swallowed back into
+// it at the ends of the range. nothing fades, nothing is keyframed:
+// the tearing and the healing fall out of the same smooth union.
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl', { antialias: false });
 
-// ---- background: a lockscreen-ish surface drawn once ----
+// ---- the plate behind the glass. the digits are drawn here, not on
+// top, so the lens has something to refract and the number is only
+// ever seen through the body ----
 const tex2d = document.createElement('canvas');
 const ctx = tex2d.getContext('2d');
 let dpr = 1;
 
-// black plate with the drop name centred, so the lens crosses its upper
-// half. nothing else, so the lens is the only thing to look at
+const ANTE_THEMES = { dark: { bg: '#000000', fg: '#ffffff' }, light: { bg: '#000050', fg: '#FFFF00' } };
+let anteTheme = 'dark';
+try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
+
+
 const JELLY = [
 "M50.96 142.296C40.1147 142.296 30.9027 140.009 23.324 135.436C15.876 130.863 10.1267 124.656 6.076 116.816C2.156 108.845 0.130666 99.764 0 89.572L29.988 88.2C30.1187 98.1307 32.0133 105.448 35.672 110.152C39.3307 114.856 44.4267 117.208 50.96 117.208C57.624 117.208 62.7853 114.921 66.444 110.348C70.1027 105.775 71.932 98.7187 71.932 89.18V0H101.724V89.18C101.724 100.025 99.568 109.433 95.256 117.404C91.0747 125.375 85.1947 131.516 77.616 135.828C70.0373 140.14 61.152 142.296 50.96 142.296Z",
 "M122.654 139.16V0H219.478V25.088H152.446V57.036H217.126V81.732H152.446V114.072H221.046V139.16H122.654Z",
@@ -46,26 +40,9 @@ const JELLY = [
 "M466.776 139.16V85.064L418.364 0H451.292L481.672 56.056L511.856 0H544.784L496.568 85.064V139.16H466.776Z"
 ];
 
-
-// ---- theme: the host's light/dark reaches into the drop ----
-const ANTE_THEMES = { dark: { bg: '#000000', fg: '#ffffff' }, light: { bg: '#000050', fg: '#FFFF00' } };
-let anteTheme = 'dark';
-try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
-
-function drawBackground() {
-  const w = tex2d.width, h = tex2d.height;
-  ctx.fillStyle = ANTE_THEMES[anteTheme].bg;
-  ctx.fillRect(0, 0, w, h);
-  const logoW = Math.min(w * 0.30, h * 0.95);
-  const sc = logoW / 545;
-  const logoH = 143 * sc;
-  ctx.save();
-  ctx.translate((w - logoW) / 2, h / 2 - logoH * 0.02);
-  ctx.scale(sc, sc);
-  ctx.fillStyle = ANTE_THEMES[anteTheme].fg;
-  for (const d of JELLY) ctx.fill(new Path2D(d));
-  ctx.restore();
-}
+const MAXV = 5;                 // 0 through 5. six steps, nothing more
+let value = 0;
+let wheel = 0, wheelV = 0;      // the wheel's position, in values, springed
 
 const vsSrc = `
 attribute vec2 p;
@@ -341,8 +318,8 @@ void main() {
   // a normal drop shadow: small offset down, wide soft blur, very low
   // density. an exponential falloff keeps it from reading as a cloud
   // soft, and sized in body radii so it survives being scaled. a fixed
-  // blur in screen space made the small version look wrong: the body
-  // shrank, the shadow did not
+  // blur in screen space is what made the small version look wrong:
+  // the body shrank, the shadow did not
   float dCast = scene(q - vec2(0.0, -0.30 * uR), c, uR) / gm;
   float soft = 0.62 * uR;
   float veil = exp(-max(dCast, 0.0) / soft) * outside;
@@ -552,64 +529,137 @@ const uHover = gl.getUniformLocation(prog, 'uHover');
 const uDropHov = gl.getUniformLocation(prog, 'uDropHov');
 
 // ============================================================
-// physics. the glass is a thing you can throw. while dragging it
-// hangs on a stiff spring, so it has weight and its own velocity.
-// released, it flies with a little air drag and bounces off the
-// window edges. every impact squashes the body, every fast move
-// stretches it along the motion, and a jelly spring rings it back
+// the plate. redrawn only while something moves, uploaded as one
+// texture. the wheel of digits sits at the lens centre, the signs sit
+// under their droplets and only exist while their droplet does
 // ============================================================
-let lx = 0.5, ly = 0.5, vx = 0, vy = 0;
-let tx = 0.5, ty = 0.5;          // where the hand wants it
-let dX = 0, dXv = 0;             // squash springs, one per axis
-let dY = 0, dYv = 0;
-let downMx = 0, downMy = 0;
-// three droplets in a row, each its own little body on the same
-// springs. they leave one after another and come home in reverse.
-// while they are out, the whole composition re-centres: the button
-// slides aside exactly half the width the row adds
-const ND = 3;
-const drops = Array.from({ length: ND }, () => ({
-  bx: 0.5, by: 0.5, bvx: 0, bvy: 0, rad: 0, radV: 0, live: false,
-  g: 0, gV: 0, hovT: 0,    // its own jelly: swells on hover, sinks on press
-  hv: 0, hvV: 0            // its own glow level, breathes like the button's
-}));
-let pressIdx = -1;          // which circle is held down
-let dropOn = false;              // do they want to be out
-let dropHome = false;            // heading back in
-let phaseT = 0;                  // when the last toggle happened
-let sh = 0, shV = 0;             // the centring shift, springed
-let homeXg = 0.5, homeYg = 0.5;  // where home is right now
-let neck = 0.05;
+let plateDirty = true, lastWheel = -999, lastRads = [-1, -1], lastPos = [-1, -1], lastBody = [-1, -1];
 
-let scale = 1, scaleT = 1, scaleV = 0;
-// the aurora breathes in on hover instead of switching on
-let hov = 0, hovT = 0, hovV = 0;
-let dragging = false, grabX = 0, grabY = 0;
+function drawPlate() {
+  const w = tex2d.width, h = tex2d.height;
+  const T = ANTE_THEMES[anteTheme];
+  ctx.fillStyle = T.bg;
+  ctx.fillRect(0, 0, w, h);
 
-// sized off the height. on portrait the whole body scales down to the
-// proportions it has in the landing card (aspect ~1.3), which also
-// leaves room for the droplet row to stay a row
-function respK() {
-  const ar = canvas.width / canvas.height;
-  return Math.min(1, ar / 1.3);
+  // the wordmark lies on the plate at full width, barely there, and
+  // sinks into the ground: full at the cap line, gone by the baseline
+  {
+    const logoW = w;
+    const sc = logoW / 545;
+    const logoH = 143 * sc;
+    const top = (h - logoH) / 2;
+    const rgb = anteTheme === 'light' ? '255,255,0' : '255,255,255';
+    const g = ctx.createLinearGradient(0, top, 0, top + logoH);
+    g.addColorStop(0.00, 'rgba(' + rgb + ',1)');
+    g.addColorStop(0.55, 'rgba(' + rgb + ',0.5)');
+    g.addColorStop(1.00, 'rgba(' + rgb + ',0)');
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = g;
+    ctx.translate(0, top);
+    ctx.scale(sc, sc);
+    for (const d of JELLY) ctx.fill(new Path2D(d));
+    ctx.restore();
+  }
+
+  ctx.fillStyle = T.fg;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // the wheel: one column of digits, the current one at the centre.
+  // it runs past the body and the body only ever shows the slice it
+  // happens to sit on, the way a mechanical counter does
+  const cx = lx * w, cy = (1 - ly) * h;
+  const { hw, hh } = lensHalf();
+  const step = hh * h * 1.55;             // distance between two values
+  const fs = Math.round(hh * h * 1.05);
+  ctx.font = '600 ' + fs + 'px ui-sans-serif, system-ui, -apple-system, Helvetica, Arial, sans-serif';
+  // the wheel only exists inside the body. outside it there is nothing
+  // to see, so the number is never on the wall, only ever in the glass
+  ctx.save();
+  const cw = hw * w * 2.15, ch = hh * h * 2.0;
+  ctx.beginPath();
+  ctx.roundRect(cx - cw / 2, cy - ch / 2, cw, ch, ch / 2);
+  ctx.clip();
+  for (let v = 0; v <= MAXV; v++) {
+    const y = cy + (wheel - v) * step;
+    if (y < cy - ch || y > cy + ch) continue;
+    ctx.fillText(String(v), cx, y);
+  }
+  ctx.restore();
+
+  // the signs. each one lives on the plate only while its droplet is
+  // out, and grows with it, so it is born and swallowed together with
+  // the body that carries it
+  const ar = w / h;
+  for (let i = 0; i < ND; i++) {
+    const D = drops[i];
+    if (D.rad < 0.004) continue;
+    const sx = D.bx * w, sy = (1 - D.by) * h;
+    const r = D.rad * h;
+    const bar = r * 0.52, th = Math.max(2, r * 0.115);
+    ctx.fillRect(sx - bar / 2, sy - th / 2, bar, th);
+    if (i === 1) ctx.fillRect(sx - th / 2, sy - bar / 2, th, bar);
+  }
 }
 
+function uploadPlate() {
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
+}
+
+// ============================================================
+// physics. one body in the middle, two droplets beside it. the body
+// never leaves its home, so the whole system is about birth, swallow
+// and the wobble each of those costs
+// ============================================================
+let lx = 0.5, ly = 0.5, vx = 0, vy = 0;
+let tx = 0.5, ty = 0.5;                   // where the hand wants it
+let dragging = false, grabX = 0, grabY = 0, downMx = 0, downMy = 0;
+let dX = 0, dXv = 0, dY = 0, dYv = 0;     // the body's jelly
+let lurch = 0, lurchV = 0;                // the sideways blob on a press
+
+const ND = 2;                             // 0 = minus, 1 = plus
+const drops = [0, 1].map(() => ({
+  bx: 0.5, by: 0.5, bvx: 0, bvy: 0, rad: 0, radV: 0, live: false,
+  g: 0, gV: 0, hovT: 0, hv: 0, born: 0
+}));
+let pressIdx = -1;
+let neck = 0.05;
+let hov = 0, hovT = 0, hovV = 0;
+let scale = 1, scaleT = 1, scaleV = 0;
+
+// the whole composition runs smaller than the glass drop's single
+// button: three bodies in a row need less size to feel monumental
+const SIZE = 0.7;
+function respK() {
+  const ar = canvas.width / canvas.height;
+  return Math.min(1, ar / 1.3) * SIZE;
+}
 function lensHalf() {
   const R = 0.13;
   const ar = canvas.width / canvas.height;
   const k = respK();
-  // the deform is part of the true size: the hitbox follows the wobble
-  // and so do the droplet slots, which is what makes everything react
   return { hw: R * P.shapeW * scale * k * (1 + dX) / ar,
            hh: R * P.shapeH * scale * k * (1 + dY), ar };
 }
 function dropEffR(D) { return D.rad * (1 + D.g); }
+function wants(i) { return i === 0 ? value > 0 : value < MAXV; }
+
+function slotOf(i) {
+  const { hw, hh, ar } = lensHalf();
+  const RAD = hh;
+  const gap = RAD * 0.72 * P.spacing;
+  const off = hw + (gap + RAD) / ar;
+  return { x: lx + (i === 0 ? -off : off), y: ly };
+}
+
 function overDrop(mx, my) {
   const ar = canvas.width / canvas.height;
   for (let i = 0; i < ND; i++) {
     const D = drops[i];
-    if (!D.live) continue;
-    if (Math.hypot((mx - D.bx) * ar, my - D.by) < dropEffR(D) + 0.015) return i;
+    if (!D.live || D.rad < 0.02) continue;
+    if (Math.hypot((mx - D.bx) * ar, my - D.by) < dropEffR(D) + 0.02) return i;
   }
   return -1;
 }
@@ -618,21 +668,31 @@ function overLens(mx, my) {
   return Math.abs(mx - lx) < hw + 0.02 / ar && Math.abs(my - ly) < hh + 0.02;
 }
 
+function step(dir) {
+  const nv = Math.max(0, Math.min(MAXV, value + dir));
+  if (nv === value) return;
+  value = nv;
+  // the wheel gets thrown, not set: the spring carries it and overshoots
+  wheelV += -dir * 5.2;
+  // and the body answers on the side that was pressed. it lurches,
+  // squashes, and rings back out of the same springs
+  lurchV += dir * 0.9;
+  dXv -= 1.5;
+  dYv += 0.9;
+}
+
 addEventListener('pointermove', e => {
   const mx = e.clientX / innerWidth, my = 1 - e.clientY / innerHeight;
   if (dragging) { tx = mx - grabX; ty = my - grabY; return; }
   const inside = overLens(mx, my);
-  // the kick carries the swell, the rest point only settles it. without
-  // the kick the spring ramps and hover feels heavy next to the rest of
-  // the jelly. leaving gets the opposite kick, same snap both ways
   if (inside && !hovT) { dYv += 1.4; dXv += 1.1; }
   if (!inside && hovT) { dYv -= 0.9; dXv -= 0.7; }
   hovT = inside ? 1 : 0;
   const di = overDrop(mx, my);
   for (let i = 0; i < ND; i++) {
     const D = drops[i];
-    if (i === di && !D.hovT) D.gV += 1.9;   // it notices you too
-    if (i !== di && D.hovT) D.gV -= 1.2;    // and lets go just as fast
+    if (i === di && !D.hovT) D.gV += 1.9;
+    if (i !== di && D.hovT) D.gV -= 1.2;
     D.hovT = i === di ? 1 : 0;
   }
   canvas.style.cursor = inside ? 'grab' : di >= 0 ? 'pointer' : 'crosshair';
@@ -643,207 +703,176 @@ canvas.addEventListener('pointerdown', e => {
   const di = overDrop(mx, my);
   if (di >= 0) {
     pressIdx = di;
-    drops[di].gV -= 1.3;              // the impact
+    drops[di].gV -= 1.6;
     canvas.setPointerCapture(e.pointerId);
     return;
   }
   if (!overLens(mx, my)) return;
+  // the body itself: it can be picked up and thrown, and the whole
+  // stepper travels with it
   dragging = true;
-  grabX = mx - lx;
-  grabY = my - ly;
+  grabX = mx - lx; grabY = my - ly;
   tx = lx; ty = ly;
   canvas.setPointerCapture(e.pointerId);
   canvas.style.cursor = 'grabbing';
   downMx = mx; downMy = my;
-  // pressing: the held rest point does the sinking; the kick on top
-  // gives the impact. one system, one clock
-  dYv -= 1.1;
-  dXv -= 0.5;
+  dYv -= 1.1; dXv -= 0.5;
 });
 addEventListener('pointerup', e => {
   if (pressIdx >= 0) {
-    drops[pressIdx].gV += 1.6;        // release pop, it rings out
+    const i = pressIdx;
+    drops[i].gV += 1.9;
     pressIdx = -1;
+    step(i === 0 ? -1 : 1);
     return;
   }
   if (!dragging) return;
   dragging = false;
   canvas.style.cursor = 'grab';
-  // release: the rest point jumps back to zero and the kick on top
-  // makes it pop. it overshoots and rings out on its own
-  dYv += 1.5;
-  dXv += 0.7;
-  const mx = e.clientX / innerWidth, my = 1 - e.clientY / innerHeight;
-  // a click, not a drag: the row separates, or comes home
-  if (Math.hypot(mx - downMx, my - downMy) < 0.012) {
-    dropOn = !dropOn;
-    dropHome = !dropOn;
-    phaseT = performance.now();
-  }
+  dYv += 1.5; dXv += 0.7;
 });
-addEventListener('pointerleave', () => { scaleT = 1; hovT = 0; });
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === '+') step(1);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === '-') step(-1);
+});
+addEventListener('wheel', e => {
+  // the wheel of a mouse turns the wheel of the stepper
+  if (Math.abs(e.deltaY) < 4) return;
+  const now = performance.now();
+  if (now - (addEventListener.last || 0) < 140) return;
+  addEventListener.last = now;
+  step(e.deltaY > 0 ? -1 : 1);
+}, { passive: true });
 
 function physics(dt) {
-  // the button has a home. pulling it away is an argument with a spring
-  // that stiffens the further you get, and it never fully agrees.
-  // the home itself slides aside while the row is out, so button plus
-  // droplets stay centred as one composition
-  const { hw: hwA, hh: hhA } = lensHalf();
-  const aspectJS = canvas.width / canvas.height;
-  const rightA = 1 - (0.5 + hwA) > hhA * 3.2 / aspectJS;
-  const exA = rightA ? 1 : 0, eyA = rightA ? 0 : -1;
-  let rowTot = hhA * (1.80 * P.spacing - 1) + (ND - 1) * hhA * (2.62 * P.spacing - 2);
-  for (const D of drops) rowTot += 2 * dropEffR(D);
-  const rowE = rowTot / (rightA ? aspectJS : 1);
-  const shT = dropOn ? rowE / 2 : 0;
-  const shk = 70, shd = 2 * Math.sqrt(shk) * 0.95;
-  shV += (shk * (shT - sh) - shd * shV) * dt;
-  sh += shV * dt;
-  const homeX = 0.5 - exA * sh, homeY = 0.5 - eyA * sh;
-  homeXg = homeX; homeYg = homeY;
-  const hx = lx - homeX, hy = ly - homeY;
-  const pull = Math.hypot(hx, hy);
-  const ka = 150 + 2400 * pull * pull;
-  if (dragging) {
-    const k = 420, d = 2 * Math.sqrt(k);
-    vx += (k * (tx - lx) - d * vx) * dt;
-    vy += (k * (ty - ly) - d * vy) * dt;
-    vx += -ka * hx * dt;
-    vy += -ka * hy * dt;
-  } else {
-    // released: the same spring takes it home, underdamped on purpose.
-    // it overshoots, wobbles, settles
-    const dmp = 2 * Math.sqrt(ka) * 0.32;
-    vx += (-ka * hx - dmp * vx) * dt;
-    vy += (-ka * hy - dmp * vy) * dt;
-  }
-  lx += vx * dt;
-  ly += vy * dt;
-
-  // the walls. an impact keeps most of the speed and dumps the rest
-  // into the body as squash
-  const { hw, hh } = lensHalf();
-  const rest = 0.58;
-  const kick = 0.55;
-  if (lx < hw)     { lx = hw;     if (vx < 0) { dXv -= Math.min(-vx * kick, 3); dYv += Math.min(-vx * kick * 0.7, 2); vx = -vx * rest; } }
-  if (lx > 1 - hw) { lx = 1 - hw; if (vx > 0) { dXv -= Math.min(vx * kick, 3);  dYv += Math.min(vx * kick * 0.7, 2);  vx = -vx * rest; } }
-  if (ly < hh)     { ly = hh;     if (vy < 0) { dYv -= Math.min(-vy * kick, 3); dXv += Math.min(-vy * kick * 0.7, 2); vy = -vy * rest; } }
-  if (ly > 1 - hh) { ly = 1 - hh; if (vy > 0) { dYv -= Math.min(vy * kick, 3);  dXv += Math.min(vy * kick * 0.7, 2);  vy = -vy * rest; } }
-
-  // the row. each droplet hangs on a bouncy spring to its slot, all
-  // slots on the button's centre line. the tearing lives at the wall:
-  // the join turns gooey there and the wall drags, so each neck reads
+  // the drop is warmed up in a parked iframe that has no size for a
+  // frame or two. nothing here survives a zero-area canvas, so wait
+  if (!(canvas.width > 0 && canvas.height > 0)) return;
+  // the body has a home in the middle. pulling it away is an argument
+  // with a spring that stiffens the further you get, and it never
+  // fully agrees. released, it flies home and overshoots
   {
-    const { hw, hh } = lensHalf();
-    const RAD = hh;               // same height as the button
-    const aspect = canvas.width / canvas.height;
-    const right = rightA;
-    const ex = exA, ey = eyA;
-    const inX = lx + ex * hw * 0.45, inY = ly + ey * hh * 0.45;
-    const tNow = performance.now();
-    let anyLive = false, maxZone = 0;
-
-    // the row is laid out over the circles' true current sizes. when
-    // one swells, its neighbours' slots move over and their springs
-    // carry them there: the whole row wobbles into the new order
-    const gW = RAD * (1.80 * P.spacing - 1);
-    const gGap = RAD * (2.62 * P.spacing - 2);
-    let cumOff = gW;
-
-    for (let i = 0; i < ND; i++) {
-      const D = drops[i];
-      const eR = dropEffR(D);
-      cumOff += eR;
-      const off = cumOff;
-      cumOff += eR + gGap;
-      const slotX = right ? lx + hw + off / aspect : lx;
-      const slotY = right ? ly : ly - hh - off;
-
-      const wait = dropOn ? i * 140 : (ND - 1 - i) * 140;
-      const active = tNow - phaseT > wait;
-
-      // out-activation: born right at the wall with a push outward
-      if (dropOn && active && !D.live) {
-        D.live = true;
-        D.bx = lx + (right ? hw - RAD * 0.10 : 0);
-        D.by = ly + (right ? 0 : -(hh - RAD * 0.10));
-        D.bvx = right ? 1.2 : 0;
-        D.bvy = right ? 0 : -1.2;
-        dXv -= 0.35;             // the recoil of letting go
-      }
-
-      const goingOut = dropOn && active;
-      const tx2 = goingOut ? slotX : inX;
-      const ty2 = goingOut ? slotY : inY;
-      if (D.live) {
-        // each circle is lazier than the one before it. dragging the
-        // row, they trail and whip instead of moving as one block
-        const bk = 200 * Math.pow(0.74, i);
-        const bd = 2 * Math.sqrt(bk) * 0.5;
-        D.bvx += (bk * (tx2 - D.bx) - bd * D.bvx) * dt;
-        D.bvy += (bk * (ty2 - D.by) - bd * D.bvy) * dt;
-        // the wall is sticky: crossing it slows the body so the neck
-        // stretches long instead of snapping instantly
-        const gap = right ? (D.bx - (lx + hw)) * aspect : (ly - hh) - D.by;
-        const zone = Math.exp(-Math.pow(gap / (RAD * 0.9), 2));
-        maxZone = Math.max(maxZone, zone);
-        const wallDrag = Math.exp(-dt * 5.5 * zone);
-        D.bvx *= wallDrag; D.bvy *= wallDrag;
-        D.bx += D.bvx * dt;
-        D.by += D.bvy * dt;
-        // swallowed once fully submerged, nobody sees the shrink
-        if (!goingOut &&
-            Math.hypot((D.bx - inX) * (right ? aspect : 1), D.by - inY) < RAD * 0.5) {
-          D.live = false;
-          dXv += 0.55; dYv -= 0.3;   // the gulp, one per droplet
-        }
-      }
-      anyLive = anyLive || D.live;
-
-      // asymmetric radius: out at full size from the wall, home rides
-      // on position so the shrink hides inside the body
-      const along = right ? Math.abs((D.bx - lx) * aspect) / (hw * aspect)
-                          : Math.abs(D.by - ly) / hh;
-      const swell = Math.min(Math.max((along - 0.35) / 0.80, 0), 1);
-      const radT = !D.live ? 0
-                 : goingOut ? RAD
-                 : RAD * (0.32 + 0.68 * swell);
-      D.radV += (180 * (radT - D.rad) - 2 * Math.sqrt(180) * 0.6 * D.radV) * dt;
-      D.rad += D.radV * dt;
-      D.rad = Math.max(D.rad, 0);
-      // its jelly: hover swells above zero, holding sinks below, the
-      // same clock as the big button's
-      const gT = pressIdx === i ? -0.10 : D.hovT * 0.11;
-      D.gV += (-90 * (D.g - gT) - 2 * Math.sqrt(90) * 0.5 * D.gV) * dt;
-      D.g += D.gV * dt;
-      D.hv += (D.hovT - D.hv) * Math.min(dt * 6, 1);
+    const hx = lx - 0.5, hy = ly - 0.5;
+    const pull = Math.hypot(hx, hy);
+    const ka = 150 + 2400 * pull * pull;
+    if (dragging) {
+      const k = 420, d = 2 * Math.sqrt(k);
+      vx += (k * (tx - lx) - d * vx) * dt;
+      vy += (k * (ty - ly) - d * vy) * dt;
+      vx += -ka * hx * dt;
+      vy += -ka * hy * dt;
+    } else {
+      const dmp = 2 * Math.sqrt(ka) * 0.32;
+      vx += (-ka * hx - dmp * vx) * dt;
+      vy += (-ka * hy - dmp * vy) * dt;
     }
-    if (dropHome && !anyLive) dropHome = false;
-    const neckT = 0.05 + 0.085 * maxZone * ((dropOn || dropHome) ? 1 : 0);
-    neck += (neckT - neck) * Math.min(dt * 10, 1);
+    lx += vx * dt;
+    ly += vy * dt;
+    // the walls. an impact keeps most of the speed and dumps the rest
+    // into the body as squash
+    const { hw, hh } = lensHalf();
+    const ar = canvas.width / canvas.height;
+    const RAD = hh;
+    const arm = hw + (RAD * 0.72 * P.spacing + RAD) / ar + RAD / ar;
+    const rest = 0.58, kick = 0.55;
+    if (lx < arm)     { lx = arm;     if (vx < 0) { dXv -= Math.min(-vx * kick, 3); dYv += Math.min(-vx * kick * 0.7, 2); vx = -vx * rest; } }
+    if (lx > 1 - arm) { lx = 1 - arm; if (vx > 0) { dXv -= Math.min(vx * kick, 3);  dYv += Math.min(vx * kick * 0.7, 2);  vx = -vx * rest; } }
+    if (ly < hh)      { ly = hh;      if (vy < 0) { dYv -= Math.min(-vy * kick, 3); dXv += Math.min(-vy * kick * 0.7, 2); vy = -vy * rest; } }
+    if (ly > 1 - hh)  { ly = 1 - hh;  if (vy > 0) { dYv -= Math.min(vy * kick, 3);  dXv += Math.min(vy * kick * 0.7, 2);  vy = -vy * rest; } }
   }
 
-  // the jelly. underdamped on purpose, it should ring a few times.
-  // while held, its rest point sits below zero: the button is pressed
-  // in, stays pressed, and springs out of the same system on release
+  // the value wheel. stiff and underdamped, so it snaps past the digit
+  // and comes back, like a picker that has been flicked
+  const wk = 210, wd = 2 * Math.sqrt(210) * 0.52;
+  wheelV += (wk * (value - wheel) - wd * wheelV) * dt;
+  wheel += wheelV * dt;
+
+  // the sideways blob after a press
+  lurchV += (-260 * lurch - 2 * Math.sqrt(260) * 0.42 * lurchV) * dt;
+  lurch += lurchV * dt;
+
+  const { hw, hh } = lensHalf();
+  const aspect = canvas.width / canvas.height;
+  const RAD = hh;
+  const tNow = performance.now();
+  let maxZone = 0;
+
+  for (let i = 0; i < ND; i++) {
+    const D = drops[i];
+    const out = wants(i);
+    const sgn = i === 0 ? -1 : 1;
+    const slot = slotOf(i);
+    // the mouth: where a droplet is born and where it is swallowed
+    const inX = lx + sgn * hw * 0.45, inY = ly;
+
+    if (out && !D.live) {
+      // born at the wall, pushed outward. the body recoils
+      D.live = true;
+      D.born = tNow;
+      D.bx = lx + sgn * (hw - RAD * 0.10);
+      D.by = ly;
+      D.bvx = sgn * 1.15;
+      D.bvy = 0;
+      dXv -= 0.4;
+    }
+
+    const tx2 = out ? slot.x : inX;
+    const ty2 = out ? slot.y : inY;
+    if (D.live) {
+      const bk = dragging || Math.hypot(vx, vy) > 0.05 ? 130 : 200;
+      const bd = 2 * Math.sqrt(bk) * 0.5;
+      D.bvx += (bk * (tx2 - D.bx) - bd * D.bvx) * dt;
+      D.bvy += (bk * (ty2 - D.by) - bd * D.bvy) * dt;
+      // the wall is sticky. crossing it slows the body so the neck
+      // stretches long instead of snapping
+      const gap = (D.bx - (lx + sgn * hw)) * aspect * sgn;
+      const zone = Math.exp(-Math.pow(gap / (RAD * 0.9), 2));
+      maxZone = Math.max(maxZone, zone);
+      const drag = Math.exp(-dt * 5.5 * zone);
+      D.bvx *= drag; D.bvy *= drag;
+      D.bx += D.bvx * dt;
+      D.by += D.bvy * dt;
+      if (!out && Math.hypot((D.bx - inX) * aspect, D.by - inY) < RAD * 0.5) {
+        D.live = false;
+        dXv += 0.6; dYv -= 0.35;     // the gulp
+      }
+    }
+
+    // the radius rides on how far out it is, so the shrink always
+    // happens inside the body where nobody sees it. a body with no
+    // width would divide by zero here, and one NaN never washes out
+    const along = hw > 1e-5 ? Math.abs((D.bx - lx) * aspect) / (hw * aspect) : 0;
+    const swell = Math.min(Math.max((along - 0.35) / 0.80, 0), 1);
+    const radT = !D.live ? 0 : out ? RAD : RAD * (0.32 + 0.68 * swell);
+    D.radV += (180 * (radT - D.rad) - 2 * Math.sqrt(180) * 0.6 * D.radV) * dt;
+    D.rad += D.radV * dt;
+    if (!isFinite(D.rad) || !isFinite(D.radV)) { D.rad = radT; D.radV = 0; }
+    D.rad = Math.max(D.rad, 0);
+
+    const gT = pressIdx === i ? -0.12 : D.hovT * 0.11;
+    D.gV += (-90 * (D.g - gT) - 2 * Math.sqrt(90) * 0.5 * D.gV) * dt;
+    D.g += D.gV * dt;
+    D.hv += (D.hovT - D.hv) * Math.min(dt * 6, 1);
+  }
+
+  const neckT = 0.05 + 0.085 * maxZone;
+  neck += (neckT - neck) * Math.min(dt * 10, 1);
+
+  // the body's jelly, underdamped so it rings a few times
   const jk = 90, jd = 2 * Math.sqrt(90) * 0.5;
-  // pressed sinks below zero, hovered swells above it. one system,
-  // growth with a wobble instead of a clean scale
-  const tX = dragging ? -0.07 : hovT * 0.10;
-  const tY = dragging ? -0.13 : hovT * 0.12;
+  const tX = dragging ? -0.07 : pressIdx >= 0 ? -0.05 : hovT * 0.10;
+  const tY = dragging ? -0.13 : pressIdx >= 0 ? -0.09 : hovT * 0.12;
   dXv += (-jk * (dX - tX) - jd * dXv) * dt; dX += dXv * dt;
   dYv += (-jk * (dY - tY) - jd * dYv) * dt; dY += dYv * dt;
 }
 
-// stretch is not stored, it is read off the velocity: fast along x
-// means longer and flatter, and the sum stays near volume neutral
+// the stretch is read off the state, never stored: a fast wheel or a
+// fresh lurch pulls the body long and the sum stays volume neutral
 function deformNow() {
-  // held off centre it stretches like taffy along the pull; moving fast
-  // it stretches along the motion. both read straight off the state
-  // measured from where home is now, not from the screen centre: the
-  // centring slide must not read as a pull
-  const sx = Math.min(Math.abs(vx) * 0.22, 0.20) + Math.min(Math.abs(lx - homeXg) * 0.9, 0.22);
-  const sy = Math.min(Math.abs(vy) * 0.22, 0.20) + Math.min(Math.abs(ly - homeYg) * 0.9, 0.22);
+  const sx = Math.min(Math.abs(lurch) * 0.55, 0.16)
+           + Math.min(Math.abs(vx) * 0.22, 0.20) + Math.min(Math.abs(lx - 0.5) * 0.9, 0.22);
+  const sy = Math.min(Math.abs(wheelV) * 0.012, 0.14)
+           + Math.min(Math.abs(vy) * 0.22, 0.20) + Math.min(Math.abs(ly - 0.5) * 0.9, 0.22);
   const ux = Math.max(-0.30, Math.min(0.35, dX + sx - sy * 0.6));
   const uy = Math.max(-0.30, Math.min(0.35, dY + sy - sx * 0.6));
   return [ux, uy];
@@ -852,25 +881,30 @@ function deformNow() {
 addEventListener('message', e => {
   if (e.data && e.data.anteTheme) {
     anteTheme = e.data.anteTheme;
-    drawBackground();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
+    plateDirty = true;
   }
 });
 
 function resize() {
   dpr = Math.min(devicePixelRatio, 2);
-  canvas.width = innerWidth * dpr;
-  canvas.height = innerHeight * dpr;
-  tex2d.width = canvas.width;
-  tex2d.height = canvas.height;
+  canvas.width = Math.max(1, Math.round(innerWidth * dpr));
+  canvas.height = Math.max(1, Math.round(innerHeight * dpr));
+  // the plate is capped: it only has to survive being magnified by a
+  // lens, and it is uploaded on every moving frame
+  const capW = Math.min(canvas.width, 1600);
+  tex2d.width = capW;
+  tex2d.height = Math.round(capW * canvas.height / canvas.width);
   gl.viewport(0, 0, canvas.width, canvas.height);
-  drawBackground();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
+  plateDirty = true;
 }
 addEventListener('resize', resize);
 resize();
+
+// the host closes the window on a tap unless the drop claims the spot
+window.__solid = (mx, my) => {
+  if (overLens(mx, my)) return true;
+  return overDrop(mx, my) >= 0;
+};
 
 let last = performance.now();
 function frame(t) {
@@ -879,109 +913,60 @@ function frame(t) {
   last = now;
   physics(dt);
 
+  // the plate is only redrawn while something on it moves
+  if (plateDirty ||
+      Math.abs(wheel - lastWheel) > 0.0015 ||
+      Math.abs(drops[0].rad - lastRads[0]) > 0.0004 ||
+      Math.abs(drops[1].rad - lastRads[1]) > 0.0004 ||
+      Math.abs(drops[0].bx - lastPos[0]) > 0.0006 ||
+      Math.abs(drops[1].bx - lastPos[1]) > 0.0006 ||
+      Math.abs(lx - lastBody[0]) > 0.0004 || Math.abs(ly - lastBody[1]) > 0.0004) {
+    drawPlate();
+    uploadPlate();
+    lastWheel = wheel;
+    lastRads = [drops[0].rad, drops[1].rad];
+    lastPos = [drops[0].bx, drops[1].bx];
+    lastBody = [lx, ly];
+    plateDirty = false;
+  }
+
   scaleV += (scaleT - scale) * 0.045 - scaleV * 0.26;
   scale += scaleV;
-  // grabbing kills the glow: hover is an invitation, holding is holding
-  const ht = dragging ? 0 : hovT;
-  hovV += (ht - hov) * 0.030 - hovV * 0.24;
+  hovV += ((dragging ? 0 : hovT) - hov) * 0.030 - hovV * 0.24;
   hov += hovV;
+
   gl.uniform1f(uHover, Math.max(0, hov));
-  gl.uniform1fv(uDropHov, drops.map(D => Math.max(0, D.hv)));
+  gl.uniform1fv(uDropHov, [Math.max(0, drops[0].hv), Math.max(0, drops[1].hv), 0]);
   gl.uniform1f(uScale, scale);
   for (const k in DEFAULTS) gl.uniform1f(U[k], P[k]);
-  // the blue room: quieter shadow, none of it above the body, thinner smoke
   gl.uniform1f(uShadowUpLoc, 1.0);
   gl.uniform1f(U.shadow, anteTheme === 'light' ? 0.26 : 0.34);
-  if (anteTheme === 'light') gl.uniform1f(U.smoke, 0.3);
-  // the artwork drifts slowly, so its light-to-dark edge crosses the lens
-  const T = t * 0.001;
+  // less smoke than the glass drop: three bodies close together read
+  // better with a clearer rim
+  gl.uniform1f(U.smoke, anteTheme === 'light' ? 0.18 : 0.35);
+
   gl.uniform2f(uPan, 0.0, 0.0);
   gl.uniform1i(uTex, 0);
   gl.uniform2f(uRes, canvas.width, canvas.height);
   gl.uniform1f(uTime, t * 0.001);
-  gl.uniform2f(uLens, lx, ly);
-  gl.uniform1f(uRU, 0.13 * respK());
-  const [ux, uy] = deformNow();
-  gl.uniform2f(uDeform, ux, uy);
-  gl.uniform2fv(uDrops, drops.flatMap(D => [D.bx, D.by]));
-  gl.uniform1fv(uDropRs, drops.map(D => dropEffR(D)));
+
+  const k = respK();
+  const bodyX = lx + lurch * 0.012;
+  gl.uniform2f(uLens, bodyX, ly);
+  gl.uniform1f(uRU, 0.13 * k);   // k already carries SIZE
+  gl.uniform2fv(uDeform, deformNow());
+  gl.uniform2fv(uDrops, [drops[0].bx, drops[0].by, drops[1].bx, drops[1].by, 0.5, -1]);
+  gl.uniform1fv(uDropRs, [dropEffR(drops[0]), dropEffR(drops[1]), 0]);
   gl.uniform1f(uNeckU, neck * respK());
+
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
-// ---- tuning panel ----
-const RANGES = {
-  lightAngle: [0, 6.28, 0.02], lightPower: [0, 2, 0.02], refraction: [0, 2.5, 0.01],
-  depth: [0, 2, 0.02], dispersion: [0, 0.06, 0.001], frost: [0, 1, 0.01],
-  splay: [1.5, 10, 0.1],
-  shapeW: [0.5, 4, 0.05], shapeH: [0.2, 2, 0.02], smoke: [0, 1, 0.01],
-  smokePos: [-0.8, 0.8, 0.02],
-  shadow: [0, 0.6, 0.01], spacing: [0.7, 2, 0.01],
-  aurora: [0, 2, 0.02], auroraSpeed: [0, 3, 0.02], auroraRay: [0.15, 1.5, 0.01],
-  bounce: [0, 6, 0.05], pool: [0, 3, 0.02], halo: [0, 4, 0.02]
-};
-const panel = document.getElementById('tune');
-panel.innerHTML = Object.keys(RANGES).map(k => {
-  const [mn, mx, st] = RANGES[k];
-  return `<label>${k.toUpperCase()}<span class="v" id="v_${k}">${P[k]}</span></label>
-          <input type="range" id="i_${k}" min="${mn}" max="${mx}" step="${st}" value="${P[k]}">`;
-}).join('') + '<div class="btn" id="copy">COPY VALUES</div><div class="btn" id="reset">RESET</div>';
-
-for (const k in RANGES) {
-  document.getElementById('i_' + k).addEventListener('input', e => {
-    P[k] = parseFloat(e.target.value);
-    document.getElementById('v_' + k).textContent = P[k];
-    localStorage.setItem('glassTune', JSON.stringify(P));
-  });
-}
-document.getElementById('copy').addEventListener('click', () => {
-  navigator.clipboard.writeText(JSON.stringify(P));
-  document.getElementById('copy').textContent = 'COPIED';
-  setTimeout(() => { document.getElementById('copy').textContent = 'COPY VALUES'; }, 1200);
-});
-document.getElementById('reset').addEventListener('click', () => {
-  Object.assign(P, DEFAULTS);
-  localStorage.removeItem('glassTune');
-  for (const k in RANGES) {
-    document.getElementById('i_' + k).value = P[k];
-    document.getElementById('v_' + k).textContent = P[k];
-  }
-});
-addEventListener('keydown', e => {
-  const tuneOk = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  if (tuneOk && (e.key === 'd' || e.key === 'D')) panel.classList.toggle('on');
-});
-
-// for hosts embedding this demo: is there glass under this uv point?
-// lets a wrapper close on empty clicks and stay open on real ones
-window.__solid = (mx, my) => overLens(mx, my) || overDrop(mx, my) >= 0;
-
-// and a graceful goodbye: the host asks the fleet to come home first.
-// returns whether there was anything to recall; __busy reports whether
-// the swallowing is still in progress
-window.__recall = () => {
-  // the goodbye also lets go of the hover: a cursor parked on the glass
-  // must not hold the swell up while the host waits for stillness
-  hovT = 0;
-  drops.forEach(D => { D.hovT = 0; });
-  if (!dropOn && !dropHome) return false;
-  if (dropOn) {
-    dropOn = false;
-    dropHome = true;
-    phaseT = performance.now();
-  }
-  return true;
-};
-// busy until everything truly stands still: fleet home, the centring
-// slide returned, the jelly rung out, the button back on its anchor.
-// closing one frame earlier hands a moving button to a calm preview
-window.__busy = () =>
-  dropOn || dropHome ||
-  Math.abs(sh) > 0.003 || Math.abs(shV) > 0.02 ||
-  Math.abs(dX) > 0.03 || Math.abs(dY) > 0.03 ||
-  Math.abs(lx - homeXg) > 0.005 || Math.abs(ly - homeYg) > 0.005;
+// ---- theme: the host's light/dark reaches into the drop ----
+function applyAnteTheme() { plateDirty = true; }
+applyAnteTheme();
 </script>
 </body>
 </html>
