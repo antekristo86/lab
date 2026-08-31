@@ -900,6 +900,26 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
+// the host asks for the drop to come home before it shrinks the
+// window. the stepper winds back to zero, lets go of the hand and the
+// hover, and reports busy until everything has stopped moving
+window.__recall = () => {
+  hovT = 0;
+  drops.forEach(D => { D.hovT = 0; });
+  dragging = false;
+  pressIdx = -1;
+  const had = value !== 0 || Math.abs(lx - 0.5) > 0.004 || Math.abs(ly - 0.5) > 0.004;
+  value = 0;
+  return had;
+};
+window.__busy = () =>
+  Math.abs(wheel) > 0.02 || Math.abs(wheelV) > 0.15 ||
+  drops[0].live ||
+  Math.abs(lx - 0.5) > 0.004 || Math.abs(ly - 0.5) > 0.004 ||
+  Math.abs(vx) > 0.02 || Math.abs(vy) > 0.02 ||
+  Math.abs(dX) > 0.03 || Math.abs(dY) > 0.03 ||
+  Math.abs(lurch) > 0.02;
+
 // the host closes the window on a tap unless the drop claims the spot
 window.__solid = (mx, my) => {
   if (overLens(mx, my)) return true;
