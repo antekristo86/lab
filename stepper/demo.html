@@ -634,7 +634,10 @@ let scale = 1, scaleT = 1, scaleV = 0;
 const SIZE = 0.7;
 function respK() {
   const ar = canvas.width / canvas.height;
-  return Math.min(1, ar / 1.3) * SIZE;
+  // portrait already shrinks the whole thing to keep the row a row.
+  // on a phone that went one step too far, so it gets some of it back
+  const port = ar < 1 ? 1.2 : 1;
+  return Math.min(1, ar / 1.3) * SIZE * port;
 }
 function lensHalf() {
   const R = 0.13;
