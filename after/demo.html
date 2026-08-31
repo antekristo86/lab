@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>after good</title>
+<style>
+  @font-face { font-family: 'Geist'; src: url('./Geist-Regular.woff2') format('woff2'); font-weight: 400; font-display: block; }
+  @font-face { font-family: 'Geist'; src: url('./Geist-Medium.woff2') format('woff2'); font-weight: 500; font-display: block; }
+  @font-face { font-family: 'Geist'; src: url('./Geist-SemiBold.woff2') format('woff2'); font-weight: 600; font-display: block; }
+  @font-face { font-family: 'Geist'; src: url('./Geist-Bold.woff2') format('woff2'); font-weight: 700; font-display: block; }
+  html, body { margin: 0; background: #000; cursor: crosshair; }
+  html.light, html.light body { background: #000050; }
+  body {
+    font-family: 'Geist', system-ui, sans-serif;
+    color: #fff;
+    font-size: 17px; line-height: 28px;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+  }
+  html.light body { color: #FFFF00; }
+
+  /* the hero: the headline owns the whole first viewport. monumental
+     type, everything else is black space. the card shows exactly this */
+  header {
+    min-height: 100svh;
+    display: flex; flex-direction: column; justify-content: center;
+    box-sizing: border-box;
+    max-width: 720px; margin: 0 auto; padding: 32px;
+  }
+  /* the gate: one full-bleed block after the hero. the first scroll
+     reveals it. in light it is rebuilt from the theme's own two colors */
+  figure.gate {
+    margin: 0; height: 78svh; position: relative;
+  }
+  figure.gate img, figure.gate canvas {
+    display: block; width: 100%; height: 100%; object-fit: cover;
+  }
+  figure.gate canvas { display: none; position: absolute; inset: 0; }
+  html.light figure.gate img { visibility: hidden; }
+  html.light figure.gate canvas { display: block; }
+  /* listen: the article's own voice, drawn as it actually sounds. the
+     bars are the recording, lit behind the playhead and dim ahead of it.
+     press the word to start, press the sound to go somewhere */
+  .player { max-width: 620px; margin: 0 auto; padding: 12vh 32px 0; }
+  /* the word and the bars share one middle line. the bars are symmetric
+     around the canvas centre, so the caps are centred on it too */
+  .prow { display: flex; align-items: center; gap: 22px; height: 40px; }
+  .word {
+    flex: none;
+    font-size: 28px; line-height: 40px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
+    cursor: pointer; user-select: none;
+    color: rgba(255,255,255,0.45);
+    transition: color 0.18s ease;
+    transform-origin: 50% 50%;
+  }
+  .word:hover, body.on .word { color: #fff; }
+  html.light .word { color: rgba(255,255,0,0.45); }
+  html.light .word:hover, html.light body.on .word { color: #FFFF00; }
+  #wave { flex: 1 1 auto; display: block; height: 40px; cursor: pointer; }
+  .player .meta {
+    margin: 16px 0 0;
+    font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: rgba(255,255,255,0.4);
+    user-select: none;
+  }
+  html.light .player .meta { color: rgba(255,255,0,0.4); }
+  .topic {
+    font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: rgba(255,255,255,0.4);
+    /* optically flush with the headline: the big glyphs carry almost
+       no side bearing, the small type does, so the label steps right */
+    margin: 0 0 28px calc(clamp(52px, 13vw, 116px) * 0.045);
+  }
+  h1 {
+    font-size: clamp(52px, 13vw, 116px);
+    line-height: 0.94;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin: 0;
+  }
+
+  main {
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 8vh 32px 40vh;
+  }
+  h2 {
+    font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
+    text-transform: uppercase; font-weight: 600;
+    color: rgba(255,255,255,0.45);
+    margin: 84px 0 28px;
+  }
+  /* the body sits a step back, strong statements stand at full color.
+     color, not opacity: opacity cannot escape its parent */
+  p { margin: 0 0 28px; color: rgba(255,255,255,0.78); }
+  strong { font-weight: 500; color: #fff; }
+  em { font-style: normal; color: rgba(255,255,255,0.5); }
+  /* a beat: the inner monologue stands line by line, tighter */
+  .beat { margin: 0 0 8px; color: rgba(255,255,255,0.5); }
+  .beat.last { margin-bottom: 28px; }
+  .beat strong { color: #fff; font-weight: 500; }
+  blockquote { margin: 0 0 28px; padding-left: 20px; border-left: 1px solid rgba(255,255,255,0.3); color: rgba(255,255,255,0.78); }
+  .end {
+    font-size: 13px; line-height: 20px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: rgba(255,255,255,0.4);
+    margin-top: 84px;
+  }
+
+  html.light .topic, html.light .end { color: rgba(255,255,0,0.4); }
+  html.light h2 { color: rgba(255,255,0,0.45); }
+  html.light p, html.light blockquote { color: rgba(255,255,0,0.78); }
+  html.light strong, html.light .beat strong { color: #FFFF00; }
+  html.light em, html.light .beat { color: rgba(255,255,0,0.5); }
+  html.light blockquote { border-color: rgba(255,255,0,0.3); }
+
+</style>
+</head>
+<body>
+<header>
+  <p class="topic">Design / AI</p>
+  <h1>After<br>good</h1>
+</header>
+<audio id="au" src="./audio.mp3" preload="metadata"></audio>
+<figure class="gate">
+  <img src="./hero.jpg" alt="Plaster casts of the same classical statue, stacked and shrink-wrapped on pallet racking in a concrete warehouse" />
+  <canvas aria-hidden="true"></canvas>
+</figure>
+<div class="player">
+  <div class="prow">
+    <span class="word" id="word" role="button" tabindex="0">Listen</span>
+    <canvas id="wave" aria-label="seek within the recording"></canvas>
+  </div>
+  <p class="meta" id="meta">14 min</p>
+</div>
+<main>
+  <p>Something strange is happening to our definition of good work.</p>
+  <p>Every day I see things that would have impressed me enormously a few years ago. A beautifully designed landing page. A polished prototype. A working product. A cinematic video. A surprisingly complete piece of software.</p>
+  <p>And increasingly, the remarkable part of the story is how little time it took to make.</p>
+  <p><em>Built in an afternoon. Made in 20 minutes. One prompt. One person doing what would previously have required a team.</em></p>
+  <p>And to be clear: I find this incredible.</p>
+  <p>I've spent most of my career building products, brands and digital experiences. I know what these things used to cost. Not just in money, but in coordination, expertise and time.</p>
+  <p>Things that required days now take hours. Things that required teams can sometimes be done by one person. Ideas I would once have discarded because the implementation wasn't worth the effort can now be tested before lunch.</p>
+  <p>That is a profound change. But I think there is a second-order effect we haven't fully internalized yet.</p>
+  <p><strong>AI compresses the time it takes to reach yesterday's standard. That doesn't make speed the new standard. It makes yesterday's standard worthless.</strong></p>
+  <p>Not literally worthless, of course. A good product still needs to work. A good website still needs to communicate. A good interface still needs to be usable.</p>
+  <p>But the economic and creative value of simply reaching that level is collapsing. And that changes what we should be aiming for.</p>
+  <h2>What happens to the standard?</h2>
+  <p>Imagine a project that would have taken two weeks three years ago. Research. Concepts. Design. Iteration. Prototyping. Development. Testing. Refinement.</p>
+  <p>Today, with the right experience and the right AI tools, perhaps you can reach a comparable result in two days.</p>
+  <p>The obvious benefit is that you just saved eight days. You can ship earlier. Take on more work. Reduce your costs. Spend more time with your family. Start another project. All of those are legitimate consequences.</p>
+  <p>But there is another possibility I find much more interesting: <strong>what could you make if you still gave it two weeks?</strong></p>
+  <p>Because most of the conversation around AI productivity is still about compression. How do I write this faster? How do I design this faster? How do I build this faster?</p>
+  <p>Those are useful questions. But they assume the destination stays the same.</p>
+  <p>What if it doesn't? What happens when we take some of the time AI gives us and put it back into the work? Not to make more of it. To make something we previously wouldn't have made at all.</p>
+  <h2>Constraints have always designed with us</h2>
+  <p>The tools available to us have always shaped the things we create. Digital design is a good example.</p>
+  <p>There was a period when interfaces were extraordinarily detailed. Skeuomorphic interfaces used texture, depth, light, shadow and physical metaphors extensively. Creating those interfaces was painstaking. Designers built them layer by layer in tools like Photoshop.</p>
+  <p>Then the environment changed. Mobile became dominant. Products became larger. Interfaces needed to work across more screen sizes and platforms. Teams needed reusable systems. Products needed to ship and evolve faster.</p>
+  <p>Flat design wasn't caused by one constraint. It emerged from a much larger technological and cultural shift.</p>
+  <p>And a lot of good things came from it. We learned to reduce. We built component systems. We created common interaction patterns. We made increasingly complex software understandable to increasingly large audiences.</p>
+  <p>Eventually, an enormous amount of digital design converged around a shared visual and functional language. Again, for good reasons. But there was a side effect.</p>
+  <p><strong>We became extremely good at producing a certain kind of good.</strong></p>
+  <h2>We created the average</h2>
+  <p>Look at enough modern SaaS products and something becomes obvious. Most of them are not badly designed. Quite the opposite. They are remarkably competent.</p>
+  <p>The typography works. The spacing works. The hierarchy works. The components are polished. The interactions make sense. And yet it can be surprisingly difficult to remember which one you were looking at five minutes later.</p>
+  <p>We spent years codifying what good digital design looks like. We turned judgment into patterns. Patterns into components. Components into libraries. Libraries into systems.</p>
+  <p>We documented best practices. We copied what worked. We optimized for usability, conversion, scalability and speed. And then we handed that world to AI.</p>
+  <p>Which is why I think some of the conversation around AI slop misses something important. We often talk about AI slop as if AI suddenly introduced generic design into the world.</p>
+  <p>I'm not sure it did. <strong>AI slop looks generic because we gave AI a generic world to learn from.</strong></p>
+  <p>It learned our landing pages. Our dashboards. Our typography. Our design systems. Our product conventions. Our taste. And generative AI is becoming extraordinarily good at reproducing that shared center of gravity.</p>
+  <p>That should not surprise us. We spent years making the recipe incredibly clear. AI just learned how to cook it.</p>
+  <h2>The average is becoming incredibly cheap</h2>
+  <p>This is where I think the implications become more interesting than the tools themselves. AI makes the existing standard extraordinarily cheap. And as a consequence, humans have less economic value in reproducing the existing standard.</p>
+  <p>That applies beyond design. If everyone can produce competent copy, visuals, code, presentations, research and prototypes dramatically faster, then competence doesn't disappear. It becomes the entry ticket.</p>
+  <p>The baseline rises. What was impressive becomes expected. What was expensive becomes accessible. What differentiated you becomes available inside a text box.</p>
+  <p>And when the cost of reaching the current standard collapses, there are essentially two directions we can go. We can use the efficiency to produce more of the existing standard. Or we can use it to move the standard.</p>
+  <p>I think we will obviously do both. But creatively, I'm much more interested in the second.</p>
+  <h2>The opportunity isn&#x27;t just faster production</h2>
+  <p>For years, there were countless things we simply didn't do because they weren't worth the effort. Small details that would never survive prioritization. Experiments too expensive to validate. Ideas that required too much engineering. Entire directions that died with some version of: <em>that's cool, but it's too much work.</em></p>
+  <p>Those constraints didn't just determine how long things took. <strong>They shaped what we allowed ourselves to imagine.</strong></p>
+  <p>That distinction matters. Because removing production constraints should eventually change more than production. It should change conception.</p>
+  <p>And I don't think we are fully there yet. I see an enormous amount of evidence that AI has changed how quickly we can create things. I see less evidence that it has changed what we think is worth creating.</p>
+  <p>That's not an accusation. It makes sense. New technologies often begin by imitating the systems they replace. Early cars looked like carriages. Early websites borrowed from print. Early smartphone interfaces borrowed heavily from physical objects.</p>
+  <p>And right now, much of AI-assisted creation is still using radically new capabilities to produce very familiar outcomes. That is probably a phase. But it's a phase I think we should become conscious of.</p>
+  <h2>The real creative challenge starts now</h2>
+  <p>I've noticed this in my own work. There are things I can build myself today that I simply could not have justified building a few years ago. Not because I suddenly became an engineer. Because the distance between intention and implementation has collapsed.</p>
+  <p>Before, if I wanted a particular interaction, movement or behavior, I had to decide whether it was important enough to explain, design, prototype, hand off, implement, review and iterate. Every detail had a cost. Enough small costs and eventually you learn to stop asking for certain things. You become pragmatic. Often correctly.</p>
+  <p>Today I can explore many of those details directly. I can try something. Feel it. Reject it. Change it. Try something else.</p>
+  <p><strong>The cost of curiosity has fallen.</strong> And I think that may ultimately matter more than the cost of production falling.</p>
+  <p>Because now I have to retrain another instinct. Not <em>how quickly can I finish this?</em> But: <em>what am I no longer prevented from trying?</em></p>
+  <p>That is a very different creative question.</p>
+  <h2>We may be entering a new design era</h2>
+  <p>I don't know what the next dominant design language will look like. I hope nobody does. That's the interesting part.</p>
+  <p>I don't think the answer is simply more visual complexity. I don't think we need to return to skeuomorphism. And I definitely don't think differentiation means adding more animation, effects or decoration. That would just create a different recipe for AI to learn.</p>
+  <p>The opportunity is deeper. Our tools are changing. Implementation costs are changing dramatically. The relationship between designer and code is changing. The number of iterations and directions we can afford to explore is changing.</p>
+  <p>Some constraints remain, of course. Human attention remains finite. Cognitive load remains real. Accessibility matters. Usability matters. Good judgment matters.</p>
+  <p>But many constraints that quietly shaped the aesthetics and economics of digital products are weakening. It would be strange if the products themselves didn't eventually change as a result. Maybe we simply haven't seen the full effect yet.</p>
+  <h2>This changes what it means to be good</h2>
+  <p>There is another reason I think this matters, especially for people who make things for a living.</p>
+  <p>For a long time, being exceptionally good at execution had enormous value. Knowing how to make something polished was a skill. Knowing the tools was a skill. Knowing how to turn an idea into a functioning product was a skill.</p>
+  <p>Those things still matter. But their scarcity is changing. If AI can increasingly reproduce what we currently consider good, then reproducing good cannot remain the thing that makes us valuable.</p>
+  <p>And I don't think the comforting answer is: <em>humans are creative, AI isn't.</em> I wouldn't bet my career on that assumption. AI will get better. The generic baseline will keep moving upward.</p>
+  <p>So the interesting question for designers, builders, writers and other creative people isn't whether AI will eventually become good enough to compete with our current output. Assume it will. Then what?</p>
+  <p>I think part of the answer is that our job moves upstream. Toward judgment. Toward taste. Toward seeing cultural and technological shifts while they are happening. Toward connecting things that don't yet obviously belong together. Toward deciding what deserves to exist before there is a pattern for it. Toward creating the references that tomorrow's models will eventually learn from.</p>
+  <p>AI can make the existing standard extraordinarily cheap. Our response shouldn't be to defend the price of producing it. <strong>It should be to create what the new standard becomes.</strong></p>
+  <h2>Move the standard</h2>
+  <p>I understand why speed feels so exciting right now. It is exciting. There is something almost absurd about watching work that once consumed weeks happen in an afternoon.</p>
+  <p>But I don't think speed itself will remain much of an advantage. Everyone is getting the same tools. Models will get faster. Agents will get better. Implementation will get cheaper. The time advantage will normalize.</p>
+  <p>What remains interesting is what we do with it.</p>
+  <p>Maybe you use AI to finish at 2 p.m. instead of 8 p.m. Great. Maybe you use it to run a company with five people instead of fifty. Great.</p>
+  <p>But if your ambition is to make exceptional things, there is another option. Take some of the time back. Put it into exploration. Into iteration. Into the details that never survived the old economics. Into directions that previously seemed unreasonable. Into questioning the patterns we have spent the last decade perfecting. Into finding out what becomes possible when implementation stops deciding what you are allowed to imagine.</p>
+  <p>Because the opportunity AI gives us isn't simply to arrive at the old destination faster. It is to finally ask whether we should still be heading there at all.</p>
+  <p>AI compresses the time it takes to reach yesterday's standard. The interesting question is what we build after we get there.</p>
+  <p><strong>Move the standard.</strong></p>
+  <p class="end">(C) 2026 &mdash; ante.design</p>
+</main>
+<script>
+// an article is a drop like any other: same host contract. on close the
+// page glides back to the top, and the window waits for stillness before
+// it shrinks, so a still page hands over to a still preview
+let recalling = false;
+window.__recall = () => {
+  if (scrollY < 2 || recalling) return recalling;
+  recalling = true;
+  let sy = scrollY, sv = -sy * 6, last = performance.now();
+  const k = 260, d = 2 * Math.sqrt(260);
+  const step = (now) => {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    sv += (-k * sy - d * sv) * dt;
+    sy += sv * dt;
+    if (sy < 1 && Math.abs(sv) < 8) {
+      scrollTo(0, 0);
+      recalling = false;
+      return;
+    }
+    scrollTo(0, sy);
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  return true;
+};
+window.__busy = () => recalling;
+
+// ---- listen: the recording drawn as it actually sounds. the bars are
+// its own loudness over twelve minutes, measured once and carried in the
+// file, so nothing has to be decoded to show them. lit behind the
+// playhead, dim ahead. the word starts it, the sound is the scrubber ----
+const PEAKS = 'kkmhlgsfmejdjsbhjhiqfoahcjfslpinhqgmj8mpslrddnunu9lwglrgzlkbpkl8itpffaqhpjpmyfdv3rbqjjjnk9aakgjnhodmqfrkmfmewio2qjokqc5noekdhjjgin5eol2srpcqomkholeenahgdjimmge9ppodonpfdggjpprjnk6qct6nhwl2mcrpnfpriofa';
+const au = document.getElementById('au');
+const word = document.getElementById('word');
+const wave = document.getElementById('wave');
+const wx = wave.getContext('2d');
+const meta = document.getElementById('meta');
+
+let sq = 0, sqV = 0, plast = 0, hoverX = -1, dragging = false, wdpr = 1, ww = 0, wh = 40;
+
+function fmt(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+function wresize() {
+  wdpr = Math.min(devicePixelRatio, 3);
+  const r = wave.getBoundingClientRect();
+  ww = r.width;
+  wave.width = Math.round(r.width * wdpr);
+  wave.height = Math.round(wh * wdpr);
+}
+addEventListener('resize', wresize);
+
+function seekAt(clientX) {
+  if (!au.duration) return;
+  const r = wave.getBoundingClientRect();
+  au.currentTime = Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * au.duration;
+}
+wave.addEventListener('pointerdown', e => {
+  dragging = true;
+  wave.setPointerCapture(e.pointerId);
+  seekAt(e.clientX);
+  if (au.paused) au.play();
+});
+wave.addEventListener('pointermove', e => {
+  hoverX = e.clientX - wave.getBoundingClientRect().left;
+  if (dragging) seekAt(e.clientX);
+});
+wave.addEventListener('pointerup', () => { dragging = false; });
+wave.addEventListener('pointerleave', () => { hoverX = -1; dragging = false; });
+
+word.addEventListener('click', () => {
+  sqV -= 7;
+  au.paused ? au.play() : au.pause();
+});
+word.addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); word.click(); }
+});
+addEventListener('keydown', e => {
+  // fifteen seconds back and forward, the way every podcast app does it
+  if (!au.duration) return;
+  if (e.key === 'ArrowLeft') au.currentTime = Math.max(0, au.currentTime - 15);
+  if (e.key === 'ArrowRight') au.currentTime = Math.min(au.duration, au.currentTime + 15);
+});
+au.addEventListener('play', () => { document.body.classList.add('on'); word.textContent = 'Pause'; });
+au.addEventListener('pause', () => {
+  document.body.classList.remove('on');
+  word.textContent = au.currentTime > 0.5 ? 'Resume' : 'Listen';
+});
+au.addEventListener('ended', () => { au.currentTime = 0; word.textContent = 'Listen'; });
+
+function pframe(now) {
+  const dt = Math.min((now - plast) / 1000 || 0.016, 0.05);
+  plast = now;
+  sqV += (-320 * sq - 2 * Math.sqrt(320) * 0.5 * sqV) * dt;
+  sq += sqV * dt;
+  // caps sit a hair above the line box centre; 1px puts them on the axis
+  word.style.transform = 'translateY(1px) scale(' + (1 + sq * 0.01) + ')';
+
+  if (!ww) wresize();
+  const g = wx;
+  g.setTransform(wdpr, 0, 0, wdpr, 0, 0);
+  g.clearRect(0, 0, ww, wh);
+  const light = document.documentElement.classList.contains('light');
+  const fg = light ? '255,255,0' : '255,255,255';
+  const n = PEAKS.length;
+  const gap = 2;
+  const bw = Math.max(1, (ww - (n - 1) * gap) / n);
+  const p = au.duration ? au.currentTime / au.duration : 0;
+  const head = p * ww;
+  for (let i = 0; i < n; i++) {
+    const v = parseInt(PEAKS[i], 36) / 35;
+    const h = Math.max(2, v * wh);
+    const x = i * (bw + gap);
+    const played = x + bw <= head;
+    const near = hoverX >= 0 && Math.abs(x + bw / 2 - hoverX) < 26;
+    g.fillStyle = 'rgba(' + fg + ',' + (played ? 0.95 : near ? 0.45 : 0.2) + ')';
+    g.fillRect(x, (wh - h) / 2, bw, h);
+  }
+  meta.textContent = (au.paused && au.currentTime < 0.1)
+    ? '14 min'
+    : fmt(au.currentTime) + ' \u00b7 ' + fmt(au.duration || 0);
+  requestAnimationFrame(pframe);
+}
+wresize();
+requestAnimationFrame(pframe);
+
+// the host closes the window on a tap unless the drop claims that spot
+window.__solid = (mx, my) => {
+  const x = mx * innerWidth, y = (1 - my) * innerHeight;
+  for (const el of [word, wave]) {
+    const r = el.getBoundingClientRect();
+    if (x >= r.left - 10 && x <= r.right + 10 && y >= r.top - 12 && y <= r.bottom + 12) return true;
+  }
+  return false;
+};
+
+// ---- the gate in the light theme: the same photograph, rebuilt from
+// the theme's own two colors. shadows sink into the blue, light rises
+// into the yellow. baked once, on demand ----
+const gateImg = document.querySelector('figure.gate img');
+const gateCv = document.querySelector('figure.gate canvas');
+let duoBaked = false;
+function bakeDuo() {
+  if (duoBaked || !gateImg.naturalWidth) return;
+  const w = Math.min(1600, gateImg.naturalWidth);
+  const h = Math.round(gateImg.naturalHeight * w / gateImg.naturalWidth);
+  gateCv.width = w; gateCv.height = h;
+  const x = gateCv.getContext('2d');
+  x.drawImage(gateImg, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h);
+  const px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const l = (px[i] * 0.2126 + px[i + 1] * 0.7152 + px[i + 2] * 0.0722) / 255;
+    px[i] = 255 * l;
+    px[i + 1] = 255 * l;
+    px[i + 2] = 80 * (1 - l);
+  }
+  x.putImageData(d, 0, 0);
+  duoBaked = true;
+}
+
+// ---- theme: the host's light/dark reaches into the drop ----
+let anteTheme = 'dark';
+try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
+function applyAnteTheme() {
+  document.documentElement.classList.toggle('light', anteTheme === 'light');
+  if (anteTheme === 'light') {
+    if (gateImg.complete) bakeDuo();
+    else gateImg.addEventListener('load', bakeDuo, { once: true });
+  }
+}
+addEventListener('message', e => { if (e.data && e.data.anteTheme) { anteTheme = e.data.anteTheme; applyAnteTheme(); } });
+applyAnteTheme();
+</script>
+</body>
+</html>
