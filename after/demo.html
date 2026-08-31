@@ -88,6 +88,20 @@
   figure.gate canvas { display: none; position: absolute; inset: 0; }
   html.light figure.gate img { visibility: hidden; }
   html.light figure.gate canvas { display: block; }
+  /* the plates: three moments in the same hall. they break out of the
+     reading column but stay short of the gate, so the gate stays the
+     only full-bleed image */
+  figure.plate {
+    margin: 13vh 0; position: relative; left: 50%; transform: translateX(-50%);
+    width: min(860px, calc(100vw - 64px));
+  }
+  figure.plate .pw { position: relative; }
+  figure.plate img, figure.plate canvas {
+    display: block; width: 100%; height: auto;
+  }
+  figure.plate canvas { display: none; position: absolute; inset: 0; }
+  html.light figure.plate img { visibility: hidden; }
+  html.light figure.plate canvas { display: block; }
   /* listen: the article's own voice, drawn as it actually sounds. the
      bars are the recording, lit behind the playhead and dim ahead of it.
      press the word to start, press the sound to go somewhere */
@@ -174,7 +188,7 @@
 </header>
 <audio id="au" src="./audio.mp3" preload="metadata"></audio>
 <figure class="gate">
-  <img src="./hero.jpg" alt="Plaster casts of the same classical statue, stacked and shrink-wrapped on pallet racking in a concrete warehouse" />
+  <img src="./hero.jpg" alt="One unwrapped plaster cast of a classical statue standing among identical shrouded ones in a hazy hall" />
   <canvas aria-hidden="true"></canvas>
 </figure>
 <div class="player">
@@ -212,6 +226,9 @@
   <p>And a lot of good things came from it. We learned to reduce. We built component systems. We created common interaction patterns. We made increasingly complex software understandable to increasingly large audiences.</p>
   <p>But there was a side effect.</p>
   <p><strong>We became extremely good at producing a certain kind of good.</strong></p>
+  <figure class="plate">
+    <div class="pw"><img src="./negative.jpg" alt="An open plaster mold beside the head it was pulled from, standing in a shaft of light" loading="lazy" /><canvas aria-hidden="true"></canvas></div>
+  </figure>
   <p>Look at enough modern SaaS products and something becomes obvious. Most of them are not badly designed. Quite the opposite. They are remarkably competent.</p>
   <p>The typography works. The spacing works. The hierarchy works. The interactions make sense. And yet it can be surprisingly difficult to remember which one you were looking at five minutes later.</p>
   <p>We spent years codifying what good digital design looks like. We turned judgment into patterns. Patterns into components. Components into libraries. Libraries into systems.</p>
@@ -226,6 +243,9 @@
   <p>The baseline rises. What was impressive becomes expected. What was expensive becomes accessible.</p>
   <p>And when the cost of reaching the current standard collapses, we can use that efficiency in two ways. We can produce more of the existing standard. Or we can use it to move the standard.</p>
   <p>We will obviously do both. But creatively, I&#x27;m much more interested in the second.</p>
+  <figure class="plate">
+    <div class="pw"><img src="./rest.jpg" alt="A plaster head lying in a drift of its own dust, the wrapping torn open beside it" loading="lazy" /><canvas aria-hidden="true"></canvas></div>
+  </figure>
   <h2>The cost of curiosity has fallen</h2>
   <p>For years, there were countless things we simply didn&#x27;t do because they weren&#x27;t worth the effort. Details that would never survive prioritization. Experiments too expensive to validate. Ideas that required too much engineering. Entire directions that died with some version of: <em>that&#x27;s cool, but it&#x27;s too much work.</em></p>
   <p>Those constraints didn&#x27;t just determine how long things took. <strong>They shaped what we allowed ourselves to imagine.</strong></p>
@@ -246,6 +266,9 @@
   <p>And this changes what it means to be good at making them. If AI can increasingly reproduce what we currently consider good, then reproducing good cannot remain the thing that makes us valuable.</p>
   <p>And I don&#x27;t think the comforting answer is: <em>humans are creative, AI isn&#x27;t.</em> I wouldn&#x27;t bet my career on that assumption. AI will get better. The generic baseline will keep moving upward.</p>
   <p>So assume AI becomes exceptionally good at reproducing what we consider good today. Then what?</p>
+  <figure class="plate">
+    <div class="pw"><img src="./storage.jpg" alt="Identical plaster casts shrink-wrapped on pallet racking in a concrete warehouse" loading="lazy" /><canvas aria-hidden="true"></canvas></div>
+  </figure>
   <p>I think part of our job moves upstream. Toward judgment. Toward taste. Toward seeing cultural and technological shifts while they are happening. Toward connecting things that don&#x27;t yet obviously belong together. Toward deciding what deserves to exist before there is a pattern for it. Toward creating the references that tomorrow&#x27;s models will eventually learn from.</p>
   <p>AI can make the existing standard extraordinarily cheap. Our response shouldn&#x27;t be to defend the price of producing it. <strong>It should be to create what the new standard becomes.</strong></p>
   <h2>Move the standard</h2>
@@ -399,16 +422,15 @@ window.__solid = (mx, my) => {
 // ---- the gate in the light theme: the same photograph, rebuilt from
 // the theme's own two colors. shadows sink into the blue, light rises
 // into the yellow. baked once, on demand ----
-const gateImg = document.querySelector('figure.gate img');
-const gateCv = document.querySelector('figure.gate canvas');
-let duoBaked = false;
-function bakeDuo() {
-  if (duoBaked || !gateImg.naturalWidth) return;
-  const w = Math.min(1600, gateImg.naturalWidth);
-  const h = Math.round(gateImg.naturalHeight * w / gateImg.naturalWidth);
-  gateCv.width = w; gateCv.height = h;
-  const x = gateCv.getContext('2d');
-  x.drawImage(gateImg, 0, 0, w, h);
+const plates = [...document.querySelectorAll('figure.gate, figure.plate')]
+  .map(f => ({ img: f.querySelector('img'), cv: f.querySelector('canvas'), done: false }));
+function bakeOne(p) {
+  if (p.done || !p.img.naturalWidth) return;
+  const w = Math.min(1600, p.img.naturalWidth);
+  const h = Math.round(p.img.naturalHeight * w / p.img.naturalWidth);
+  p.cv.width = w; p.cv.height = h;
+  const x = p.cv.getContext('2d');
+  x.drawImage(p.img, 0, 0, w, h);
   const d = x.getImageData(0, 0, w, h);
   const px = d.data;
   for (let i = 0; i < px.length; i += 4) {
@@ -418,7 +440,13 @@ function bakeDuo() {
     px[i + 2] = 80 * (1 - l);
   }
   x.putImageData(d, 0, 0);
-  duoBaked = true;
+  p.done = true;
+}
+function bakeDuo() {
+  plates.forEach(p => {
+    if (p.img.complete) bakeOne(p);
+    else p.img.addEventListener('load', () => { if (anteTheme === 'light') bakeOne(p); }, { once: true });
+  });
 }
 
 // ---- theme: the host's light/dark reaches into the drop ----
@@ -426,10 +454,7 @@ let anteTheme = 'dark';
 try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
 function applyAnteTheme() {
   document.documentElement.classList.toggle('light', anteTheme === 'light');
-  if (anteTheme === 'light') {
-    if (gateImg.complete) bakeDuo();
-    else gateImg.addEventListener('load', bakeDuo, { once: true });
-  }
+  if (anteTheme === 'light') bakeDuo();
 }
 addEventListener('message', e => { if (e.data && e.data.anteTheme) { anteTheme = e.data.anteTheme; applyAnteTheme(); } });
 applyAnteTheme();
