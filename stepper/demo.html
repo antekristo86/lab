@@ -27,6 +27,38 @@ const tex2d = document.createElement('canvas');
 const ctx = tex2d.getContext('2d');
 const plateImg = new Image();
 plateImg.src = './plate.jpg';
+
+// the picture as an led matrix, exactly the way the wordmark on the
+// landing page is built: a dot one css pixel wide with a gap the same
+// size, so the grid is device-pixel true and nothing is ever scaled.
+// baked once per resolution, because it never changes on its own
+const ledPlate = document.createElement('canvas');
+const lctx = ledPlate.getContext('2d');
+let ledBuilt = 0;
+function buildLedPlate(w, h) {
+  if (!plateImg.complete || !plateImg.naturalWidth) return false;
+  const key = w * 100000 + h + dpr * 7;
+  if (ledBuilt === key) return true;
+  ledPlate.width = w; ledPlate.height = h;
+  lctx.clearRect(0, 0, w, h);
+  const k = Math.max(w / plateImg.naturalWidth, h / plateImg.naturalHeight);
+  const iw = Math.round(plateImg.naturalWidth * k);
+  const ih = Math.round(plateImg.naturalHeight * k);
+  lctx.drawImage(plateImg, Math.round((w - iw) / 2), Math.round((h - ih) / 2), iw, ih);
+  // one lit cell, one dark cell, both a whole css pixel
+  const dot = Math.max(1, Math.round(dpr)), period = dot * 2;
+  const tile = document.createElement('canvas');
+  tile.width = period; tile.height = period;
+  const tx = tile.getContext('2d');
+  tx.fillStyle = '#fff';
+  tx.fillRect(0, 0, dot, dot);
+  lctx.globalCompositeOperation = 'destination-in';
+  lctx.fillStyle = lctx.createPattern(tile, 'repeat');
+  lctx.fillRect(0, 0, w, h);
+  lctx.globalCompositeOperation = 'source-over';
+  ledBuilt = key;
+  return true;
+}
 let dpr = 1;
 
 const ANTE_THEMES = { dark: { bg: '#000000', fg: '#ffffff' }, light: { bg: '#000050', fg: '#FFFF00' } };
@@ -550,12 +582,10 @@ function drawPlate() {
   // the wordmark lies on the plate at full width, barely there, and
   // sinks into the ground: full at the cap line, gone by the baseline
   {
-    if (plateImg.complete && plateImg.naturalWidth) {
-      const k = Math.max(w / plateImg.naturalWidth, h / plateImg.naturalHeight);
-      const iw = plateImg.naturalWidth * k, ih = plateImg.naturalHeight * k;
+    if (buildLedPlate(w, h)) {
       ctx.save();
       if (anteTheme === 'light') ctx.globalCompositeOperation = 'lighter';
-      ctx.drawImage(plateImg, (w - iw) / 2, (h - ih) / 2, iw, ih);
+      ctx.drawImage(ledPlate, 0, 0);
       ctx.restore();
     } else {
     const logoW = w;
@@ -948,11 +978,12 @@ function resize() {
   dpr = Math.min(devicePixelRatio, 2);
   canvas.width = Math.max(1, Math.round(innerWidth * dpr));
   canvas.height = Math.max(1, Math.round(innerHeight * dpr));
-  // the plate is capped: it only has to survive being magnified by a
-  // lens, and it is uploaded on every moving frame
-  const capW = Math.min(canvas.width, 1600);
-  tex2d.width = capW;
-  tex2d.height = Math.round(capW * canvas.height / canvas.width);
+  // the plate runs at full device resolution. it used to be capped at
+  // 1600 to keep the upload cheap, but the led raster is a one pixel
+  // grid: the moment the shader has to scale the texture, the grid is
+  // no longer on the device pixels and the whole point is gone
+  tex2d.width = canvas.width;
+  tex2d.height = canvas.height;
   gl.viewport(0, 0, canvas.width, canvas.height);
   plateDirty = true;
 }
