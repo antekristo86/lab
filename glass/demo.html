@@ -34,6 +34,8 @@ const gl = canvas.getContext('webgl', { antialias: false });
 // ---- background: a lockscreen-ish surface drawn once ----
 const tex2d = document.createElement('canvas');
 const ctx = tex2d.getContext('2d');
+const plateImg = new Image();
+plateImg.src = './plate.jpg';
 
 let dpr = 1;
 
@@ -59,6 +61,16 @@ function drawBackground() {
   ctx.fillRect(0, 0, w, h);
   // the wordmark lies on the plate at full width, barely there, and
   // sinks into the ground: full at the cap line, gone by the baseline
+  if (plateImg.complete && plateImg.naturalWidth) {
+    const k = Math.max(w / plateImg.naturalWidth, h / plateImg.naturalHeight);
+    const iw = plateImg.naturalWidth * k, ih = plateImg.naturalHeight * k;
+    ctx.save();
+    if (anteTheme === 'light') ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(plateImg, (w - iw) / 2, (h - ih) / 2, iw, ih);
+    ctx.restore();
+    drawGlyphs();
+    return;
+  }
   const sc = w / 545;
   const logoH = 143 * sc;
   const top = (h - logoH) / 2;
@@ -623,12 +635,12 @@ const uScale = gl.getUniformLocation(prog, 'uScale');
 // ante's numbers, dialled in by hand on 2026-08-18. don't touch them
 // without being asked
 const DEFAULTS = {
-  lightAngle: 2.0, lightPower: 1.2, refraction: 0.5, depth: 0.0,
-  dispersion: 0.06, frost: 0.0, splay: 7.3,
-  shapeW: 1.8, shapeH: 0.58, smoke: 1.0, smokePos: -0.28,
+  lightAngle: 1.68, lightPower: 0.82, refraction: 2.04, depth: 0.0,
+  dispersion: 0.06, frost: 0.0, splay: 8.5,
+  shapeW: 1.8, shapeH: 0.58, smoke: 0.58, smokePos: 0.0,
   shadow: 0.6, spacing: 1.0,
-  aurora: 0.5, auroraSpeed: 1.62, auroraRay: 0.25,
-  bounce: 2.0, pool: 0.0, halo: 0.3
+  aurora: 0.5, auroraSpeed: 1.62, auroraRay: 0.24,
+  bounce: 3.4, pool: 0.0, halo: 0.3
 };
 const P = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('glassTune') || '{}'));
 const U = {};
@@ -1018,6 +1030,7 @@ function resize() {
 }
 addEventListener('resize', resize);
 resize();
+plateImg.addEventListener('load', () => { lastSig = ''; }, { once: true });
 
 // redrawing the plate every frame would upload the whole canvas every
 // frame. it only changes when a body moves, so ask first
