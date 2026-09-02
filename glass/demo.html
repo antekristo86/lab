@@ -34,6 +34,7 @@ const gl = canvas.getContext('webgl', { antialias: false });
 // ---- background: a lockscreen-ish surface drawn once ----
 const tex2d = document.createElement('canvas');
 const ctx = tex2d.getContext('2d');
+
 let dpr = 1;
 
 // black plate with the drop name centred, so the lens crosses its upper
@@ -56,16 +57,107 @@ function drawBackground() {
   const w = tex2d.width, h = tex2d.height;
   ctx.fillStyle = ANTE_THEMES[anteTheme].bg;
   ctx.fillRect(0, 0, w, h);
-  const logoW = Math.min(w * 0.30, h * 0.95);
-  const sc = logoW / 545;
+  // the wordmark lies on the plate at full width, barely there, and
+  // sinks into the ground: full at the cap line, gone by the baseline
+  const sc = w / 545;
   const logoH = 143 * sc;
+  const top = (h - logoH) / 2;
+  const rgb = anteTheme === 'light' ? '255,255,0' : '255,255,255';
   ctx.save();
-  ctx.translate((w - logoW) / 2, h / 2 - logoH * 0.02);
+  ctx.globalAlpha = anteTheme === 'light' ? 0.32 : 0.08;
+  ctx.translate(0, top);
   ctx.scale(sc, sc);
-  ctx.fillStyle = ANTE_THEMES[anteTheme].fg;
+  // the gradient has to be built after the transform. canvas maps it
+  // through the current matrix at fill time, so one built in page
+  // pixels lands far below the glyphs once they are scaled up
+  const g = ctx.createLinearGradient(0, 0, 0, 143);
+  g.addColorStop(0.00, 'rgba(' + rgb + ',1)');
+  g.addColorStop(0.45, 'rgba(' + rgb + ',0.77)');
+  g.addColorStop(0.72, 'rgba(' + rgb + ',0.29)');
+  g.addColorStop(0.93, 'rgba(' + rgb + ',0)');
+  ctx.fillStyle = g;
   for (const d of JELLY) ctx.fill(new Path2D(d));
   ctx.restore();
+  drawGlyphs();
 }
+
+// the mark inside the button and the three inside the droplets. drawn
+// onto the plate, never over it: the lens has to bend them or they read
+// as stickers on glass. sizes are tied to the bodies, so the wobble and
+// the swallowing carry them
+// lucide path data, 24x24, stroke 2, round caps. inlined so the drop
+// stays one file
+const LUCIDE = {
+  sun: ['M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8', 'M12 2v2', 'M12 20v2',
+        'm4.93 4.93 1.41 1.41', 'm17.66 17.66 1.41 1.41', 'M2 12h2', 'M20 12h2',
+        'm6.34 17.66-1.41 1.41', 'm19.07 4.93-1.41 1.41'],
+  moon: ['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'],
+  maximize: ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'],
+  rotate: ['M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8', 'M3 3v5h5']
+};
+function drawLucide(name, size) {
+  const k = size / 24;
+  ctx.save();
+  ctx.scale(k, k);
+  ctx.translate(-12, -12);
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const d of LUCIDE[name]) ctx.stroke(new Path2D(d));
+  ctx.restore();
+}
+
+function drawGlyphs() {
+  const th = ANTE_THEMES[anteTheme];
+  const H = tex2d.height;
+  const px = (ux, uy) => [ux * tex2d.width, (1 - uy) * H];
+  const ink = (path, lw) => {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = th.fg; ctx.fillStyle = th.fg; ctx.lineWidth = lw; path(false);
+  };
+  ctx.save();
+
+  // the button says the only true thing it can say: open or closed. a
+  // plus turning a quarter is the same stroke, nothing added or removed
+  const { hh } = lensHalf();
+  const [bx, by] = px(lx, ly);
+  const br = hh * H * 0.30;
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.rotate(open * Math.PI / 4);
+  ink(() => {
+    ctx.beginPath();
+    ctx.moveTo(-br, 0); ctx.lineTo(br, 0);
+    ctx.moveTo(0, -br); ctx.lineTo(0, br);
+    ctx.stroke();
+  }, Math.max(2, hh * H * 0.075));
+  ctx.restore();
+
+  // the droplets carry what they actually do. the mark only appears once
+  // the body is big enough to hold it, and leaves the same way
+  for (let i = 0; i < ND; i++) {
+    const D = drops[i];
+    const sc = Math.max(0, D.isc);
+    if (sc <= 0.01) continue;
+    const rp = dropEffR(D) * H;
+    if (rp < 4) continue;
+    const [dx, dy] = px(D.ix, D.iy);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, sc);
+    ctx.strokeStyle = th.fg;
+    ctx.translate(dx, dy);
+    ctx.rotate(D.irot);
+    // lucide, the set shadcn ships with. drawn on its own 24 grid and
+    // scaled down, so the 2px stroke keeps its proportion. the body's
+    // own jelly rides on top, so a press squashes the mark with it
+    drawLucide(i === 0 ? (anteTheme === 'dark' ? 'sun' : 'moon')
+             : i === 1 ? 'maximize' : 'rotate',
+             rp * 0.66 * sc * (1 + D.g * 1.1));
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 
 const vsSrc = `
 attribute vec2 p;
@@ -571,7 +663,11 @@ const ND = 3;
 const drops = Array.from({ length: ND }, () => ({
   bx: 0.5, by: 0.5, bvx: 0, bvy: 0, rad: 0, radV: 0, live: false,
   g: 0, gV: 0, hovT: 0,    // its own jelly: swells on hover, sinks on press
-  hv: 0, hvV: 0            // its own glow level, breathes like the button's
+  hv: 0, hvV: 0,           // its own glow level, breathes like the button's
+  // the mark has its own springs, so it arrives a beat after the body
+  // it lives in and settles a moment later
+  isc: 0, iscV: 0,
+  ix: 0.5, iy: 0.5, ivx: 0, ivy: 0, irot: 0, irotV: 0
 }));
 let pressIdx = -1;          // which circle is held down
 let dropOn = false;              // do they want to be out
@@ -580,6 +676,7 @@ let phaseT = 0;                  // when the last toggle happened
 let sh = 0, shV = 0;             // the centring shift, springed
 let homeXg = 0.5, homeYg = 0.5;  // where home is right now
 let neck = 0.05;
+let open = 0, openV = 0;    // the mark in the button, on its own spring
 
 let scale = 1, scaleT = 1, scaleV = 0;
 // the aurora breathes in on hover instead of switching on
@@ -644,6 +741,7 @@ canvas.addEventListener('pointerdown', e => {
   if (di >= 0) {
     pressIdx = di;
     drops[di].gV -= 1.3;              // the impact
+    drops[di].iscV -= 2.2;            // the mark takes it a touch harder
     canvas.setPointerCapture(e.pointerId);
     return;
   }
@@ -660,10 +758,25 @@ canvas.addEventListener('pointerdown', e => {
   dYv -= 1.1;
   dXv -= 0.5;
 });
+// a mark that does nothing is decoration. each droplet changes the body
+// it came out of, and the third one takes the whole row home with it
+function dropAction(i) {
+  if (i === 0) {
+    anteTheme = anteTheme === 'dark' ? 'light' : 'dark';
+  } else if (i === 1) {
+    scaleT = scaleT > 0.8 ? 0.62 : 1;
+  } else {
+    window.__recall();
+  }
+}
 addEventListener('pointerup', e => {
   if (pressIdx >= 0) {
-    drops[pressIdx].gV += 1.6;        // release pop, it rings out
+    const i = pressIdx;
+    drops[i].gV += 1.6;               // release pop, it rings out
+    drops[i].iscV += 3.0;
     pressIdx = -1;
+    const mx = e.clientX / innerWidth, my = 1 - e.clientY / innerHeight;
+    if (overDrop(mx, my) === i) dropAction(i);
     return;
   }
   if (!dragging) return;
@@ -682,6 +795,40 @@ addEventListener('pointerup', e => {
   }
 });
 addEventListener('pointerleave', () => { scaleT = 1; hovT = 0; });
+
+// the marks are pushed through on the way in and pulled back on the way
+// out, with just enough overshoot to feel like they came through
+// something. and they hang in the body rather than sit on it, so they
+// trail by a hair and tip with it. a hair is the whole point: far
+// enough to feel the lens bend at the rim, never far enough to notice
+function markPhysics(dt) {
+  const arM = canvas.width / canvas.height;
+  for (const D of drops) {
+    const st = D.live ? 1 : 0;
+    const sk = 150, sd = 2 * Math.sqrt(sk) * 0.58;
+    D.iscV += (sk * (st - D.isc) - sd * D.iscV) * dt;
+    D.isc += D.iscV * dt;
+
+    const pk = 1100, pd = 2 * Math.sqrt(pk) * 0.80;
+    D.ivx += (pk * (D.bx - D.ix) - pd * D.ivx) * dt;
+    D.ivy += (pk * (D.by - D.iy) - pd * D.ivy) * dt;
+    D.ix += D.ivx * dt;
+    D.iy += D.ivy * dt;
+    // it may trail, but never out of the glass
+    let ox = (D.ix - D.bx) * arM, oy = D.iy - D.by;
+    const m = Math.hypot(ox, oy), lim = dropEffR(D) * 0.05;
+    if (m > lim && m > 1e-6) {
+      const f = lim / m;
+      D.ix = D.bx + ox * f / arM;
+      D.iy = D.by + oy * f;
+      D.ivx *= 0.5; D.ivy *= 0.5;
+    }
+    const rt = Math.max(-0.025, Math.min(0.025, (D.ix - D.bx) * 22));
+    const rk = 220, rd = 2 * Math.sqrt(rk) * 0.80;
+    D.irotV += (rk * (rt - D.irot) - rd * D.irotV) * dt;
+    D.irot += D.irotV * dt;
+  }
+}
 
 function physics(dt) {
   // the button has a home. pulling it away is an argument with a spring
@@ -872,15 +1019,36 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
+// redrawing the plate every frame would upload the whole canvas every
+// frame. it only changes when a body moves, so ask first
+let lastSig = '';
+function plateSig() {
+  let x = anteTheme + open.toFixed(3) + lx.toFixed(4) + ly.toFixed(4)
+        + dX.toFixed(3) + dY.toFixed(3) + scale.toFixed(3);
+  for (const D of drops) x += D.bx.toFixed(4) + D.by.toFixed(4) + D.rad.toFixed(4)
+    + D.g.toFixed(3) + D.isc.toFixed(3) + D.ix.toFixed(4) + D.iy.toFixed(4) + D.irot.toFixed(3);
+  return x;
+}
+
 let last = performance.now();
 function frame(t) {
   const now = performance.now();
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   physics(dt);
+  markPhysics(dt);
 
   scaleV += (scaleT - scale) * 0.045 - scaleV * 0.26;
   scale += scaleV;
+  openV += ((dropOn ? 1 : 0) - open) * 0.055 - openV * 0.28;
+  open += openV;
+  const sig = plateSig();
+  if (sig !== lastSig) {
+    lastSig = sig;
+    drawBackground();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
+  }
   // grabbing kills the glow: hover is an invitation, holding is holding
   const ht = dragging ? 0 : hovT;
   hovV += (ht - hov) * 0.030 - hovV * 0.24;

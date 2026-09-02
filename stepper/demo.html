@@ -534,6 +534,10 @@ const uDropHov = gl.getUniformLocation(prog, 'uDropHov');
 // under their droplets and only exist while their droplet does
 // ============================================================
 let plateDirty = true, lastWheel = -999, lastRads = [-1, -1], lastPos = [-1, -1], lastBody = [-1, -1];
+// the mark moves on its own, so the plate has to ask about the mark.
+// without this the redraw only happens when something else crosses its
+// threshold, and the trail arrives in steps instead of as a movement
+let lastSc = [-1, -1], lastRot = [-1, -1], lastMark = [-1, -1, -1, -1];
 
 function drawPlate() {
   const w = tex2d.width, h = tex2d.height;
@@ -549,15 +553,19 @@ function drawPlate() {
     const logoH = 143 * sc;
     const top = (h - logoH) / 2;
     const rgb = anteTheme === 'light' ? '255,255,0' : '255,255,255';
-    const g = ctx.createLinearGradient(0, top, 0, top + logoH);
-    g.addColorStop(0.00, 'rgba(' + rgb + ',1)');
-    g.addColorStop(0.55, 'rgba(' + rgb + ',0.5)');
-    g.addColorStop(1.00, 'rgba(' + rgb + ',0)');
     ctx.save();
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = g;
+    ctx.globalAlpha = anteTheme === 'light' ? 0.32 : 0.08;
     ctx.translate(0, top);
     ctx.scale(sc, sc);
+    // the gradient has to be built after the transform. canvas maps it
+    // through the current matrix at fill time, so one built in page
+    // pixels lands far below the glyphs once they are scaled up
+    const g = ctx.createLinearGradient(0, 0, 0, 143);
+    g.addColorStop(0.00, 'rgba(' + rgb + ',1)');
+    g.addColorStop(0.45, 'rgba(' + rgb + ',0.77)');
+    g.addColorStop(0.72, 'rgba(' + rgb + ',0.29)');
+    g.addColorStop(0.93, 'rgba(' + rgb + ',0)');
+    ctx.fillStyle = g;
     for (const d of JELLY) ctx.fill(new Path2D(d));
     ctx.restore();
   }
@@ -591,15 +599,20 @@ function drawPlate() {
   // the signs. each one lives on the plate only while its droplet is
   // out, and grows with it, so it is born and swallowed together with
   // the body that carries it
-  const ar = w / h;
   for (let i = 0; i < ND; i++) {
     const D = drops[i];
-    if (D.rad < 0.004) continue;
-    const sx = D.bx * w, sy = (1 - D.by) * h;
+    const sc = Math.max(0, D.isc);
+    if (D.rad < 0.004 || sc <= 0.01) continue;
     const r = D.rad * h;
-    const bar = r * 0.52, th = Math.max(2, r * 0.115);
-    ctx.fillRect(sx - bar / 2, sy - th / 2, bar, th);
-    if (i === 1) ctx.fillRect(sx - th / 2, sy - bar / 2, th, bar);
+    const bar = r * 0.52 * sc * (1 + D.g * 1.1);
+    const th = Math.max(2, r * 0.115 * sc);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, sc);
+    ctx.translate(D.ix * w, (1 - D.iy) * h);
+    ctx.rotate(D.irot);
+    ctx.fillRect(-bar / 2, -th / 2, bar, th);
+    if (i === 1) ctx.fillRect(-th / 2, -bar / 2, th, bar);
+    ctx.restore();
   }
 }
 
@@ -622,22 +635,21 @@ let lurch = 0, lurchV = 0;                // the sideways blob on a press
 const ND = 2;                             // 0 = minus, 1 = plus
 const drops = [0, 1].map(() => ({
   bx: 0.5, by: 0.5, bvx: 0, bvy: 0, rad: 0, radV: 0, live: false,
-  g: 0, gV: 0, hovT: 0, hv: 0, born: 0
+  g: 0, gV: 0, hovT: 0, hv: 0, born: 0,
+  // the sign has its own springs: it is pushed through the body on the
+  // way in, pulled back on the way out, and hangs in the body rather
+  // than sitting on it
+  isc: 0, iscV: 0, ix: 0.5, iy: 0.5, ivx: 0, ivy: 0, irot: 0, irotV: 0
 }));
 let pressIdx = -1;
 let neck = 0.05;
 let hov = 0, hovT = 0, hovV = 0;
 let scale = 1, scaleT = 1, scaleV = 0;
 
-// the whole composition runs smaller than the glass drop's single
-// button: three bodies in a row need less size to feel monumental
-const SIZE = 0.7;
+// the same body as the glass drop, to the pixel
 function respK() {
   const ar = canvas.width / canvas.height;
-  // portrait already shrinks the whole thing to keep the row a row.
-  // on a phone that went one step too far, so it gets some of it back
-  const port = ar < 1 ? 1.2 : 1;
-  return Math.min(1, ar / 1.3) * SIZE * port;
+  return Math.min(1, ar / 1.3);
 }
 function lensHalf() {
   const R = 0.13;
@@ -707,6 +719,7 @@ canvas.addEventListener('pointerdown', e => {
   if (di >= 0) {
     pressIdx = di;
     drops[di].gV -= 1.6;
+    drops[di].iscV -= 2.2;            // the sign takes it a touch harder
     canvas.setPointerCapture(e.pointerId);
     return;
   }
@@ -725,6 +738,7 @@ addEventListener('pointerup', e => {
   if (pressIdx >= 0) {
     const i = pressIdx;
     drops[i].gV += 1.9;
+    drops[i].iscV += 3.0;
     pressIdx = -1;
     step(i === 0 ? -1 : 1);
     return;
@@ -746,6 +760,37 @@ addEventListener('wheel', e => {
   addEventListener.last = now;
   step(e.deltaY > 0 ? -1 : 1);
 }, { passive: true });
+
+// the signs run on their own springs, none of the tuned values in P
+// are involved. a hair of trail and tip is the whole point: far enough
+// to feel the lens bend at the rim, never far enough to notice
+function markPhysics(dt) {
+  const arM = canvas.width / canvas.height;
+  for (const D of drops) {
+    const st = D.live ? 1 : 0;
+    const sk = 150, sd = 2 * Math.sqrt(sk) * 0.58;
+    D.iscV += (sk * (st - D.isc) - sd * D.iscV) * dt;
+    D.isc += D.iscV * dt;
+
+    const pk = 1100, pd = 2 * Math.sqrt(pk) * 0.80;
+    D.ivx += (pk * (D.bx - D.ix) - pd * D.ivx) * dt;
+    D.ivy += (pk * (D.by - D.iy) - pd * D.ivy) * dt;
+    D.ix += D.ivx * dt;
+    D.iy += D.ivy * dt;
+    let ox = (D.ix - D.bx) * arM, oy = D.iy - D.by;
+    const m = Math.hypot(ox, oy), lim = D.rad * (1 + D.g) * 0.05;
+    if (m > lim && m > 1e-6) {
+      const f = lim / m;
+      D.ix = D.bx + ox * f / arM;
+      D.iy = D.by + oy * f;
+      D.ivx *= 0.5; D.ivy *= 0.5;
+    }
+    const rt = Math.max(-0.025, Math.min(0.025, (D.ix - D.bx) * 22));
+    const rk = 220, rd = 2 * Math.sqrt(rk) * 0.80;
+    D.irotV += (rk * (rt - D.irot) - rd * D.irotV) * dt;
+    D.irot += D.irotV * dt;
+  }
+}
 
 function physics(dt) {
   // the drop is warmed up in a parked iframe that has no size for a
@@ -935,6 +980,7 @@ function frame(t) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   physics(dt);
+  markPhysics(dt);
 
   // the plate is only redrawn while something on it moves
   if (plateDirty ||
@@ -943,12 +989,23 @@ function frame(t) {
       Math.abs(drops[1].rad - lastRads[1]) > 0.0004 ||
       Math.abs(drops[0].bx - lastPos[0]) > 0.0006 ||
       Math.abs(drops[1].bx - lastPos[1]) > 0.0006 ||
+      Math.abs(drops[0].isc - lastSc[0]) > 0.0008 ||
+      Math.abs(drops[1].isc - lastSc[1]) > 0.0008 ||
+      Math.abs(drops[0].irot - lastRot[0]) > 0.0008 ||
+      Math.abs(drops[1].irot - lastRot[1]) > 0.0008 ||
+      Math.abs(drops[0].ix - lastMark[0]) > 0.0002 ||
+      Math.abs(drops[1].ix - lastMark[1]) > 0.0002 ||
+      Math.abs(drops[0].iy - lastMark[2]) > 0.0002 ||
+      Math.abs(drops[1].iy - lastMark[3]) > 0.0002 ||
       Math.abs(lx - lastBody[0]) > 0.0004 || Math.abs(ly - lastBody[1]) > 0.0004) {
     drawPlate();
     uploadPlate();
     lastWheel = wheel;
     lastRads = [drops[0].rad, drops[1].rad];
     lastPos = [drops[0].bx, drops[1].bx];
+    lastSc = [drops[0].isc, drops[1].isc];
+    lastRot = [drops[0].irot, drops[1].irot];
+    lastMark = [drops[0].ix, drops[1].ix, drops[0].iy, drops[1].iy];
     lastBody = [lx, ly];
     plateDirty = false;
   }
@@ -976,7 +1033,7 @@ function frame(t) {
   const k = respK();
   const bodyX = lx + lurch * 0.012;
   gl.uniform2f(uLens, bodyX, ly);
-  gl.uniform1f(uRU, 0.13 * k);   // k already carries SIZE
+  gl.uniform1f(uRU, 0.13 * k);
   gl.uniform2fv(uDeform, deformNow());
   gl.uniform2fv(uDrops, [drops[0].bx, drops[0].by, drops[1].bx, drops[1].by, 0.5, -1]);
   gl.uniform1fv(uDropRs, [dropEffR(drops[0]), dropEffR(drops[1]), 0]);
