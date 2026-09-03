@@ -59,6 +59,11 @@ function buildLedPlate(w, h) {
   const tile = document.createElement('canvas');
   tile.width = period; tile.height = period;
   const tx = tile.getContext('2d');
+  // the raster is a quarter present, no more: the gap keeps three
+  // quarters of the picture, so the grid is a structure lying over the
+  // material rather than something that cuts it apart
+  tx.fillStyle = 'rgba(255,255,255,1)';
+  tx.fillRect(0, 0, period, period);
   tx.fillStyle = '#fff';
   tx.fillRect(0, 0, dot, dot);
   lctx.globalCompositeOperation = 'destination-in';
