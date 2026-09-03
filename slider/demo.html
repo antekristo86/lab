@@ -518,6 +518,8 @@ const DEFAULTS = {
 };
 const P = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('glassTune') || '{}'));
 P.shapeW = 1.25;   // a narrower pill than the button: this one has to travel
+const BR = 0.112;  // body radius, a touch smaller than the glass drop's 0.13 so
+                   // the bead sits in better proportion to the rail it rides
 const U = {};
 for (const k in DEFAULTS) U[k] = gl.getUniformLocation(prog, 'u' + k[0].toUpperCase() + k.slice(1));
 const uLens = gl.getUniformLocation(prog, 'uLens');
@@ -560,7 +562,7 @@ function respK() {
   return Math.min(1, ar / 1.3);
 }
 function lensHalf() {
-  const R = 0.13;
+  const R = BR;
   const ar = canvas.width / canvas.height;
   const k = respK();
   return { hw: R * P.shapeW * scale * k * (1 + dX) / ar,
@@ -569,7 +571,7 @@ function lensHalf() {
 // the body without its jelly: what the rail and the float height are
 // measured against, so neither breathes with a squash
 function baseHalf() {
-  const R = 0.13;
+  const R = BR;
   const ar = canvas.width / canvas.height;
   const k = respK();
   return { hw: R * P.shapeW * k / ar, hh: R * P.shapeH * k, ar };
@@ -974,7 +976,7 @@ function frame(t) {
   const k = respK();
   const bodyX = lx + lurch * 0.012;
   gl.uniform2f(uLens, bodyX, ly);
-  gl.uniform1f(uRU, 0.13 * k);
+  gl.uniform1f(uRU, BR * k);
   gl.uniform2fv(uDeform, deformNow());
   gl.uniform2fv(uDrops, [0.5, -1, 0.5, -1, 0.5, -1]);
   gl.uniform1fv(uDropRs, [0, 0, 0]);
