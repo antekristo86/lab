@@ -66,7 +66,11 @@ function drawBackground() {
   // the photograph is the plate. cover-fitted, at full strength: the
   // lens needs something with structure to bend
   if (plateImg.complete && plateImg.naturalWidth) {
-    const k = Math.max(w / plateImg.naturalWidth, h / plateImg.naturalHeight);
+    // fitted by width, never by height. cover on a square card zooms a
+  // 16:9 plate by 1.78 and the letters become furniture. the plate is
+  // black at the top and the bottom anyway, so what is missing on a
+  // tall frame is black, which is what was there before
+  const k = w / plateImg.naturalWidth;
     const iw = plateImg.naturalWidth * k, ih = plateImg.naturalHeight * k;
     ctx.save();
     if (anteTheme === 'light') ctx.globalCompositeOperation = 'lighter';
