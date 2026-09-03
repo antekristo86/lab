@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>jelly slider</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: crosshair; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// jelly slider. the same liquid as the jelly glass drop, on a rail.
+// a bar lies on the floor, the body floats over it and can be dragged
+// along it. the value lives behind the glass on a wheel and clicks
+// past every slot the body crosses. let go, and the body finds the
+// nearest slot on its own springs and overshoots it.
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { antialias: false });
+
+// ---- the plate behind the glass. the bar and the digits are drawn
+// here, not on top, so the lens has something to bend and the number
+// is only ever seen through the body ----
+const tex2d = document.createElement('canvas');
+const ctx = tex2d.getContext('2d');
+
+let dpr = 1;
+
+const ANTE_THEMES = { dark: { bg: '#000000', fg: '#ffffff' }, light: { bg: '#000050', fg: '#FFFF00' } };
+let anteTheme = 'dark';
+try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
+
+
+const JELLY = [
+"M50.96 142.296C40.1147 142.296 30.9027 140.009 23.324 135.436C15.876 130.863 10.1267 124.656 6.076 116.816C2.156 108.845 0.130666 99.764 0 89.572L29.988 88.2C30.1187 98.1307 32.0133 105.448 35.672 110.152C39.3307 114.856 44.4267 117.208 50.96 117.208C57.624 117.208 62.7853 114.921 66.444 110.348C70.1027 105.775 71.932 98.7187 71.932 89.18V0H101.724V89.18C101.724 100.025 99.568 109.433 95.256 117.404C91.0747 125.375 85.1947 131.516 77.616 135.828C70.0373 140.14 61.152 142.296 50.96 142.296Z",
+"M122.654 139.16V0H219.478V25.088H152.446V57.036H217.126V81.732H152.446V114.072H221.046V139.16H122.654Z",
+"M239.58 139.16V0H269.372V131.124L252.908 114.072H333.464V139.16H239.58Z",
+"M350.212 139.16V0H380.005V131.124L363.54 114.072H444.096V139.16H350.212Z",
+"M466.776 139.16V85.064L418.364 0H451.292L481.672 56.056L511.856 0H544.784L496.568 85.064V139.16H466.776Z"
+];
+
+const MAXV = 10;                // 0 on the left, 10 on the right
+let value = 0;
+let wheel = 0, wheelV = 0;      // the wheel's position, in values, springed
+
+const vsSrc = `
+attribute vec2 p;
+varying vec2 vUv;
+void main() { vUv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }`;
+
+const fsSrc = `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec2  uPan;      // background drift
+uniform float uScale;    // grows on hover
+// glass, figma's model: every dial does exactly one thing
+uniform float uLightAngle, uLightPower;   // where the light stands, how hard
+uniform float uRefraction;                // how far the ray is pushed
+uniform float uDepth;                     // body thickness, drives magnification
+uniform float uDispersion;                // spectral split
+uniform float uFrost;                     // milkiness
+uniform float uSplay;                     // how sharply the rim flares
+// this piece specifically
+uniform float uShapeW, uShapeH, uSmoke, uSmokePos;
+uniform float uShadow;
+uniform float uShadowUp; // 1 = the cast may not reach above the body
+// the aurora: how bright, how fast it drifts, how tall the rays stand
+uniform float uAurora, uAuroraSpeed, uAuroraRay;
+uniform float uHover;    // springed 0..1, the aurora breathes in on hover
+uniform float uDropHov[3];// each circle's own hover level
+uniform float uBounce;   // how much light the bodies throw on each other
+uniform float uPool;     // the caustic pool on the ground below
+uniform float uHalo;     // how far the aurora shines past the rim
+uniform vec2 uLens;      // lens center, uv
+uniform float uR;        // lens radius, uv (y-normalized)
+uniform vec2 uDeform;    // squash and stretch, from the physics
+uniform vec2 uDrops[3];  // droplet centres, uv
+uniform float uDropRs[3];// their radii, y-normalized. 0 = absent
+uniform float uNeck;     // how gooey the join is right now
+
+// a rectangle with rounded corners. exact sdf
+float lensField(vec2 q, vec2 c, float r) {
+  vec2 halfSize = vec2(r * uShapeW * (1.0 + uDeform.x),
+                       r * uShapeH * (1.0 + uDeform.y)) * uScale;
+  float rad = halfSize.y;   // always half the height: clean semicircular ends
+  vec2 d2 = abs(q - c) - (halfSize - rad);
+  return length(max(d2, vec2(0.0))) + min(max(d2.x, d2.y), 0.0) - rad;
+}
+
+// the button and the droplet are one liquid. a smooth union joins
+// their fields: while they are close the join builds a meniscus, as
+// they separate it stretches into a neck, thins, and tears. none of
+// that is animated, it falls out of the smin
+float scene(vec2 q, vec2 c, float r) {
+  float a = lensField(q, c, r);
+  float aspect = uRes.x / uRes.y;
+  for (int i = 0; i < 3; i++) {
+    if (uDropRs[i] < 1e-4) continue;
+    vec2 dc = vec2(uDrops[i].x * aspect, uDrops[i].y);
+    float b = length(q - dc) - uDropRs[i];
+    float h = clamp(0.5 + 0.5 * (b - a) / uNeck, 0.0, 1.0);
+    a = mix(b, a, h) - uNeck * h * (1.0 - h);
+  }
+  return a;
+}
+
+// the surface of the glass as a height field. analytic and smooth
+// everywhere, so its slope never jumps. the distance field is fine for
+// the silhouette, but its gradient flips along the medial axis of any
+// straight edge, and that seam prints straight through the body
+float domeH(vec2 p, vec2 c, float r) {
+  vec2 hs = vec2(r * uShapeW * (1.0 + uDeform.x),
+                 r * uShapeH * (1.0 + uDeform.y)) * uScale;
+  vec2 u = (p - c) / hs;
+  float rr = pow(pow(abs(u.x), 4.0) + pow(abs(u.y), 4.0), 0.25);
+  // 1 - r^n. flat through the middle, steepest right at the rim, and
+  // that slope stays finite. a hemisphere would run to infinity there
+  // and tear; a cosine would flatten out and give no splay at all
+  float t = min(rr, 1.0);
+  return 1.0 - pow(t, uSplay);
+}
+
+// spectrum by wavelength. k = 0 red, k = 1 violet
+vec3 spectral(float k) {
+  vec3 red    = vec3(1.00, 0.22, 0.20);
+  vec3 orange = vec3(1.00, 0.58, 0.18);
+  vec3 gold   = vec3(1.00, 0.88, 0.42);
+  vec3 green  = vec3(0.50, 0.96, 0.62);
+  vec3 cyan   = vec3(0.32, 0.82, 1.00);
+  vec3 blue   = vec3(0.36, 0.46, 1.00);
+  vec3 a  = mix(red, orange, smoothstep(0.00, 0.22, k));
+  vec3 b  = mix(a,   gold,   smoothstep(0.22, 0.42, k));
+  vec3 cq = mix(b,   green,  smoothstep(0.42, 0.60, k));
+  vec3 dq = mix(cq,  cyan,   smoothstep(0.60, 0.80, k));
+  return   mix(dq,   blue,   smoothstep(0.80, 1.00, k));
+}
+
+// the rim aurora. colour flows around the outline for real: a cyclic
+// hue wheel travels one way and two comets with soft tails orbit at
+// their own speeds, one against the stream. the bright moments are
+// where they meet; between them the rim is allowed to be dark. one
+// cold family only, teal into blue into violet, no rainbow
+vec3 aurHue(float x) {
+  float k = 0.5 + 0.5 * sin(x * 6.28318);
+  vec3 teal   = vec3(0.25, 0.92, 1.00);
+  vec3 blue   = vec3(0.30, 0.45, 1.00);
+  vec3 violet = vec3(0.62, 0.40, 1.00);
+  return mix(mix(teal, blue, min(k * 2.0, 1.0)),
+             violet, max(k * 2.0 - 1.0, 0.0));
+}
+// no parade of rigid shapes on a rail. three waves travel the outline
+// at phrased, incommensurate speeds; their interference makes the
+// pools. because the waves slide against each other, a pool morphs as
+// it moves: it is born, stretches, merges, tears. nothing keeps its
+// shape, which is exactly what mechanical motion cannot do
+vec4 glowField(float ang, float t) {
+  float ts = t * uAuroraSpeed;
+  float w1 = sin(ang * 2.0 - ts * 0.53 - 0.8 * sin(ts * 0.19));
+  float w2 = sin(ang * 3.0 + ts * 0.31 + 1.2 * sin(ts * 0.23 + 2.0));
+  float w3 = sin(ang * 1.0 - ts * 0.20 + 4.0);
+  float f = w1 * 0.55 + w2 * 0.35 + w3 * 0.45;
+  float amp = pow(clamp(f * 0.55 + 0.5, 0.0, 1.0), 3.0) * 1.6 + 0.10;
+
+  // a breath of irregular flicker on top, three percent, never repeating
+  amp *= 0.97 + 0.03 * sin(t * 6.1) * sin(t * 4.3 + 1.0);
+
+  // the hue rides the wheel but the field warps it, so colour and light
+  // belong to each other instead of passing each other by
+  vec3 hue = aurHue(ang / 6.28318 - ts * 0.045 + 0.10 * w2);
+  hue = mix(hue, vec3(1.0), min(amp * amp * 0.10, 0.30));
+  return vec4(hue, amp);
+}
+
+// how deep the light spills into the body, morphing on its own clock:
+// sometimes it hugs the rim, sometimes it reaches in
+float reachMod(float ang, float t) {
+  float ts = t * uAuroraSpeed;
+  return 0.65 + 0.45 * sin(ang * 2.0 + ts * 0.26 + 2.6)
+              * sin(ang * 1.0 - ts * 0.17);
+}
+
+void main() {
+  float aspect = uRes.x / uRes.y;
+  vec2 q = vec2(vUv.x * aspect, vUv.y);
+  vec2 c = vec2(uLens.x * aspect, uLens.y);
+
+  // first-order distance: field over gradient magnitude. keeps the rim,
+  // shadow and bands equally thick all the way around
+  float e = 0.0015;
+  float F = scene(q, c, uR);
+  vec2 g = vec2(
+    scene(q + vec2(e, 0.0), c, uR) - scene(q - vec2(e, 0.0), c, uR),
+    scene(q + vec2(0.0, e), c, uR) - scene(q - vec2(0.0, e), c, uR)
+  ) / (2.0 * e);
+  float gm = max(length(g), 1e-3);
+  float d = F / gm;
+  vec3 col = texture2D(uTex, vec2(vUv.x + uPan.x, 1.0 - vUv.y + uPan.y)).rgb;
+
+  if (d < 0.0) {
+    // ---- the lens ----
+    // one idea: push the background outward, nothing at the centre,
+    // hardest at the rim, plus the magnification a thick body gives.
+    // all of it in body space, so it stays smooth everywhere. distance
+    // field gradients and height normals both tear on straight edges
+    vec2 hs = vec2(uR * uShapeW * (1.0 + uDeform.x),
+                   uR * uShapeH * (1.0 + uDeform.y)) * uScale;
+    vec2 u = (q - c) / hs;
+    float rRaw = pow(pow(abs(u.x), 6.0) + pow(abs(u.y), 6.0), 1.0 / 6.0);
+    float r = min(rRaw, 1.0);
+    vec2 dir = length(u) > 1e-5 ? normalize(u) : vec2(0.0);
+
+    // inside a droplet, that droplet is the lens. a soft handover in
+    // each neck, so the refraction never jumps. the hover level rides
+    // along: every body glows only for itself
+    vec2 ce = c;
+    float hovG = uHover;
+    float bodyPh = 0.0;      // every body shimmers on its own phase
+    float dropW = 0.0;       // 0 button, 1 inside a circle
+    for (int i = 0; i < 3; i++) {
+      if (uDropRs[i] < 1e-4) continue;
+      vec2 dc = vec2(uDrops[i].x * aspect, uDrops[i].y);
+      float rD = length(q - dc) / uDropRs[i];
+      // two separate handovers. the refraction keeps the soft, clamped
+      // blend that the approved glass look is built on. the light gets
+      // the strict one: a pixel on a circle belongs to the circle, so
+      // the button's hover cannot lend every ring half its glow
+      float wD = smoothstep(0.12, -0.12, rD - r);
+      float wG = smoothstep(0.12, -0.12, rD - rRaw);
+      if (wD > 0.001 || wG > 0.001) {
+        vec2 dirD = length(q - dc) > 1e-5 ? normalize(q - dc) : vec2(0.0);
+        r = mix(r, min(rD, 1.0), wD);
+        dir = normalize(mix(dir, dirD, wD));
+        hs = mix(hs, vec2(uDropRs[i]), wD);
+        ce = mix(c, dc, wD);
+        hovG = mix(hovG, uDropHov[i], wG);
+        bodyPh = mix(bodyPh, (float(i) + 1.0) * 2.13, wG);
+        dropW = mix(dropW, 1.0, wG);
+      }
+    }
+
+    float push = pow(r, uSplay) * uRefraction * 0.42;
+    float mag  = (1.0 - r * r) * uDepth * 0.30;
+
+    vec2 base = vUv - (q - ce) / vec2(aspect, 1.0) * mag;
+    vec2 off  = dir * push * hs / vec2(aspect, 1.0);
+
+
+    // spectral spread: sample across a run of wavelengths and weight each
+    // by its colour. three channels at three offsets gives hard red and
+    // blue edges; a weighted fan gives the soft glow real glass has.
+    // note the minus: pushing the sample inward bulges the image outward
+    vec3 acc3 = vec3(0.0);
+    vec3 wsum = vec3(0.0);
+    for (int i = 0; i < 9; i++) {
+      float k = float(i) / 8.0;
+      float sc = 1.0 + uDispersion * 9.0 * (k - 0.5);
+      float a2 = float(i) * 0.698;
+      vec2 j = vec2(cos(a2), sin(a2)) * uFrost * 0.05 * (0.3 + 0.7 * k);
+      vec2 uvS = base - off * sc + j;
+      vec3 samp = texture2D(uTex, vec2(uvS.x + uPan.x, 1.0 - uvS.y + uPan.y)).rgb;
+      vec3 w = spectral(k) + 0.35;
+      acc3 += samp * w;
+      wsum += w;
+    }
+    col = acc3 / max(wsum, vec3(0.001));
+
+    float depth = clamp(1.0 - r, 0.0, 1.0);
+    float bend = r * r;
+
+    // slight glass tint toward the rim
+    col *= mix(1.0, 0.9, bend);
+
+    // the body is smoked at the top and clears toward the bottom.
+    float hh = uR * uShapeH * (1.0 + uDeform.y) * uScale;
+    float up = (q.y - c.y) / hh;                 // -1 bottom, +1 top
+    // wide and eased twice. a narrow ramp reads as an overlay, a long
+    // one reads as tinted material. never fully black, the body keeps depth
+    float smoke = smoothstep(-0.95 + uSmokePos, 1.0 + uSmokePos, up);
+    smoke = smoke * smoke * (3.0 - 2.0 * smoke);
+    smoke = smoke * smoke * (3.0 - 2.0 * smoke);
+    col = mix(col, col * 0.10, smoke * uSmoke);
+
+    // the glow clings to the inside of the outline and is gone before
+    // the middle. angle and radius in the frame of the body this pixel
+    // belongs to, gated by that body's own hover
+    // on the small circles the pools are angularly compressed and the
+    // reach damped, so their rings stay as filigree as the button's
+    // stretched edges instead of turning into fat arcs
+    // the circles run the field at double angular frequency, but only
+    // integer multiples keep it periodic around the outline. and the two
+    // frequencies are blended as results, never as angles: a blended
+    // angle scale is aperiodic and tears at the atan seam, which is
+    // exactly the quarter-disc artefact
+    vec2 uL = (q - ce) / hs;
+    float ga = atan(uL.y, uL.x);
+    vec4 gfB = glowField(ga, uTime);
+    vec4 gfD = glowField(ga * 2.0 + bodyPh, uTime);
+    vec4 gf = mix(gfB, gfD, dropW);
+    float rm = mix(reachMod(ga, uTime), reachMod(ga * 2.0 + bodyPh, uTime), dropW);
+    float reach = uAuroraRay * (0.55 + 0.45 * gf.a) * rm * mix(1.0, 0.58, dropW);
+    float glow = pow(smoothstep(1.0 - reach, 1.0, r), 1.6)
+               * gf.a * uAurora * hovG;
+    col += gf.rgb * glow * 0.62;
+
+    // the only colour in here comes from the dispersion above
+    float band = smoothstep(0.14, 0.02, depth) * smoothstep(0.0, 0.02, depth);
+    float topness = clamp((q.y - c.y) / uR, -1.0, 1.0);
+    col += vec3(1.0) * band * smoothstep(0.45, 1.0, topness) * 0.14;
+  }
+
+  // glass casts, but barely: a wide low-density veil below the body and
+  // a slightly denser seam at the contact edge. present, never a stain
+  float outside = step(0.0, d);
+  // a normal drop shadow: small offset down, wide soft blur, very low
+  // density. an exponential falloff keeps it from reading as a cloud
+  // soft, and sized in body radii so it survives being scaled. a fixed
+  // blur in screen space is what made the small version look wrong:
+  // the body shrank, the shadow did not
+  float dCast = scene(q - vec2(0.0, -0.30 * uR), c, uR) / gm;
+  float soft = 0.62 * uR;
+  float veil = exp(-max(dCast, 0.0) / soft) * outside;
+  // the light stands above, so nothing is cast upward
+  veil *= 1.0 - smoothstep(-0.55 * uR, 0.45 * uR, q.y - c.y);
+  col *= 1.0 - veil * uShadow;
+
+  // the rim is not a stroke. it is the lit edge of a body with thickness:
+  // a bright band where the surface turns into the light, fading to
+  // nothing on the far side, plus a soft inner falloff for the wall
+  vec3 L = normalize(vec3(cos(uLightAngle), sin(uLightAngle), 0.42));
+  vec3 nrm = normalize(vec3(g / gm, 0.5));
+  float facing = clamp(dot(nrm, L), 0.0, 1.0);
+
+  // widths in pixels, not uv. keeps the edge a hairline at any resolution
+  float px = 1.0 / uRes.y;
+  float band  = smoothstep(px * 2.0, 0.0, abs(d));       // the lit edge
+  float wall  = smoothstep(px * 16.0, 0.0, abs(d));      // thickness behind it
+  float lit   = pow(facing, 4.0);                        // direct specular
+
+  // light entering the top pools along the lower wall and escapes there.
+  // that reflection is brighter than the specular above it
+  float down  = clamp(-dot(nrm, L), 0.0, 1.0);
+  float tir   = pow(down, 1.6);
+
+  // the rim carries the same light: whichever body owns this stretch
+  // of edge lends its frame and its own hover level
+  vec2 hsr = vec2(uR * uShapeW * (1.0 + uDeform.x),
+                  uR * uShapeH * (1.0 + uDeform.y)) * uScale;
+  vec2 ur = (q - c) / hsr;
+  float rSel = pow(pow(abs(ur.x), 6.0) + pow(abs(ur.y), 6.0), 1.0 / 6.0);
+  float hovR = uHover;
+  float selPh = 0.0;
+  float selSc = 1.0;
+  for (int i = 0; i < 3; i++) {
+    if (uDropRs[i] < 1e-4) continue;
+    vec2 dc = vec2(uDrops[i].x * aspect, uDrops[i].y);
+    float rD = length(q - dc) / uDropRs[i];
+    if (rD < rSel) {
+      rSel = rD; ur = (q - dc) / uDropRs[i];
+      hovR = uDropHov[i]; selPh = (float(i) + 1.0) * 2.13; selSc = 2.0;
+    }
+  }
+  vec4 gfr = glowField(atan(ur.y, ur.x) * selSc + selPh, uTime);
+  float aglow = uAurora * hovR * gfr.a;
+  vec3 rimCol = mix(vec3(1.0, 0.99, 0.96), gfr.rgb, clamp(aglow * 1.1, 0.0, 1.0));
+  col += gfr.rgb * band * aglow * 0.55;
+  col += gfr.rgb * wall * aglow * 0.17;
+  // light transport: a shining body throws its light onto the others.
+  // the stretch of rim facing the source catches exactly the hue the
+  // source shows in this direction, and it dies with distance. no body
+  // lights itself, that is what the glow above already did
+  for (int j = 0; j < 4; j++) {
+    vec2 srcP; float srcHov; float srcR; float srcPh;
+    if (j == 0) {
+      srcP = c; srcHov = uHover; srcR = hsr.y; srcPh = 0.0;
+    } else {
+      if (uDropRs[j - 1] < 1e-4) continue;
+      srcP = vec2(uDrops[j - 1].x * aspect, uDrops[j - 1].y);
+      srcHov = uDropHov[j - 1];
+      srcR = uDropRs[j - 1];
+      srcPh = float(j) * 2.13;
+    }
+    if (srcHov * uAurora < 0.004) continue;
+    if (abs(srcPh - selPh) < 0.01) continue;
+    vec2 toSrc = srcP - q;
+    float ds = length(toSrc);
+    if (ds < 1e-4) continue;
+    vec2 Ldir = toSrc / ds;
+    float facing2 = clamp(dot(nrm.xy, Ldir), 0.0, 1.0);
+    float fall = exp(-max(ds - srcR, 0.0) * 6.0);
+    vec4 gs = glowField(atan(-Ldir.y, -Ldir.x) * (j == 0 ? 1.0 : 2.0) + srcPh, uTime);
+    vec3 lc = gs.rgb * gs.a * srcHov * uAurora * uBounce * facing2 * fall;
+    col += lc * (band * 0.85 + wall * 0.25);
+  }
+
+  // caustics: the same light falls past the body and lands on the
+  // ground beneath it. the pool carries the hue the source sends
+  // downward, spreads on its way, and dies out. hover-gated like
+  // everything the aurora does
+  for (int j = 0; j < 4; j++) {
+    vec2 srcP; float srcHov; float srcR; float srcPh;
+    if (j == 0) {
+      srcP = c; srcHov = uHover; srcR = hsr.y; srcPh = 0.0;
+    } else {
+      if (uDropRs[j - 1] < 1e-4) continue;
+      srcP = vec2(uDrops[j - 1].x * aspect, uDrops[j - 1].y);
+      srcHov = uDropHov[j - 1];
+      srcR = uDropRs[j - 1];
+      srcPh = float(j) * 2.13;
+    }
+    if (srcHov * uAurora * uPool < 0.004) continue;
+    vec2 toP = q - srcP;
+    float travel = -toP.y - srcR * 0.4;
+    if (travel < -srcR * 0.9) continue;
+    // the pool fades in over most of a radius instead of starting on a
+    // hard line. the old outside mask used to hide that edge; through
+    // the glass it was suddenly naked
+    float rise = smoothstep(-srcR * 0.9, srcR * 0.7, travel);
+    float spreadW = (j == 0 ? hsr.x * 0.8 : srcR) * (0.8 + travel * 1.5 / srcR * 0.5);
+    float lat = exp(-pow(toP.x / spreadW, 2.0));
+    float reach = exp(-pow(travel / (srcR * 1.6), 2.0));
+    vec4 gs = glowField(atan(toP.y, toP.x) * (j == 0 ? 1.0 : 2.0) + srcPh, uTime);
+    // the glass is transparent: the pool continues behind the body,
+    // seen through the material and dimmed by it, instead of being cut
+    // off at the silhouette
+    float through = outside + (1.0 - outside) * 0.45;
+    col += gs.rgb * gs.a * lat * reach * rise * through * uAurora * srcHov * uPool * 0.55;
+  }
+
+  // the light does not stop at the wall: where a pool stands, a soft
+  // bloom breathes past the rim into the dark. one bloom per body,
+  // summed, because light superposes. running it off the union field
+  // instead prints the field's medial-axis creases as hard seams the
+  // moment the level goes up
+  for (int j = 0; j < 4; j++) {
+    vec2 srcP; float srcHov; float srcR; float srcPh; float dB;
+    if (j == 0) {
+      srcP = c; srcHov = uHover; srcR = hsr.y; srcPh = 0.0;
+      dB = lensField(q, c, uR) / gm;
+    } else {
+      if (uDropRs[j - 1] < 1e-4) continue;
+      srcP = vec2(uDrops[j - 1].x * aspect, uDrops[j - 1].y);
+      srcHov = uDropHov[j - 1];
+      srcR = uDropRs[j - 1];
+      srcPh = float(j) * 2.13;
+      dB = length(q - srcP) - srcR;
+    }
+    if (srcHov * uAurora < 0.004) continue;
+    vec2 urB = (q - srcP) / srcR;
+    vec4 gs = glowField(atan(urB.y, urB.x) * (j == 0 ? 1.0 : 2.0) + srcPh, uTime);
+    float dOut = max(dB, 0.0);
+    float bl = exp(-dOut * 34.0) * 0.30 + exp(-dOut * 9.0) * 0.10;
+    col += gs.rgb * gs.a * bl * outside * uAurora * srcHov * uHalo;
+  }
+
+  col += rimCol * band * lit * uLightPower * 0.35;
+  col += rimCol * band * tir * uLightPower * 0.62;
+  col += rimCol * wall * tir * uLightPower * 0.12;
+  col += vec3(0.85, 0.9, 1.0) * wall * lit * 0.04;
+  col += vec3(1.0) * band * 0.04;
+
+  // soft clip. additive light past 1.0 would slice flat and print hard
+  // edges where a channel hits the ceiling; this rolls it off smoothly,
+  // and hot spots whiten on the way, which is what overdriven light does
+  vec3 over = max(col - vec3(0.82), vec3(0.0));
+  col = min(col, vec3(0.82)) + (vec3(1.0) - exp(-over * 3.2)) * 0.18;
+
+  // a hair of dither: dark glows on black band in 8 bit without it
+  col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, vsSrc));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fsSrc));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+const tex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, tex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+const uTex = gl.getUniformLocation(prog, 'uTex');
+const uRes = gl.getUniformLocation(prog, 'uRes');
+const uTime = gl.getUniformLocation(prog, 'uTime');
+const uPan = gl.getUniformLocation(prog, 'uPan');
+const uScale = gl.getUniformLocation(prog, 'uScale');
+
+// press D for the panel
+// ante's numbers, dialled in by hand on 2026-08-18. don't touch them
+// without being asked
+const DEFAULTS = {
+  lightAngle: 1.68, lightPower: 0.82, refraction: 2.04, depth: 0.0,
+  dispersion: 0.06, frost: 0.0, splay: 8.5,
+  shapeW: 1.8, shapeH: 0.58, smoke: 0.58, smokePos: 0.0,
+  shadow: 0.6, spacing: 1.0,
+  aurora: 0.5, auroraSpeed: 1.62, auroraRay: 0.24,
+  bounce: 3.4, pool: 0.0, halo: 0.3
+};
+const P = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('glassTune') || '{}'));
+P.shapeW = 1.25;   // a narrower pill than the button: this one has to travel
+const U = {};
+for (const k in DEFAULTS) U[k] = gl.getUniformLocation(prog, 'u' + k[0].toUpperCase() + k.slice(1));
+const uLens = gl.getUniformLocation(prog, 'uLens');
+const uRU = gl.getUniformLocation(prog, 'uR');
+const uDeform = gl.getUniformLocation(prog, 'uDeform');
+const uDrops = gl.getUniformLocation(prog, 'uDrops');
+const uDropRs = gl.getUniformLocation(prog, 'uDropRs');
+const uNeckU = gl.getUniformLocation(prog, 'uNeck');
+const uShadowUpLoc = gl.getUniformLocation(prog, 'uShadowUp');
+const uHover = gl.getUniformLocation(prog, 'uHover');
+const uDropHov = gl.getUniformLocation(prog, 'uDropHov');
+
+// ============================================================
+// the plate. redrawn only while something moves, uploaded as one
+// texture. the wheel of digits sits at the lens centre, the signs sit
+// under their droplets and only exist while their droplet does
+// ============================================================
+let plateDirty = true, lastSig = '';
+
+// ============================================================
+// the rail. slots are spaced evenly along it, 0 on the left and 10 on
+// the right. the bar lies on the vertical middle and runs through the body
+// ============================================================
+const TRACK_Y = 0.5;
+// the bar is 65 percent of the width, body included: the body's centre
+// travels from one end of the bar to the other minus its own half width,
+// so it never hangs past the bar
+const BAR = 0.65;
+function barL() { return 0.5 - BAR / 2; }
+function barR() { return 0.5 + BAR / 2; }
+function trackL() { return barL() + baseHalf().hw; }
+function trackR() { return barR() - baseHalf().hw; }
+function trackSpan() { return Math.max(0.05, trackR() - trackL()); }
+function slotX(v) { return trackL() + trackSpan() * v / MAXV; }
+function valueAt(x) { return Math.max(0, Math.min(MAXV, Math.round((x - trackL()) / trackSpan() * MAXV))); }
+
+// the same body as the glass drop, to the pixel
+function respK() {
+  const ar = canvas.width / canvas.height;
+  return Math.min(1, ar / 1.3);
+}
+function lensHalf() {
+  const R = 0.13;
+  const ar = canvas.width / canvas.height;
+  const k = respK();
+  return { hw: R * P.shapeW * scale * k * (1 + dX) / ar,
+           hh: R * P.shapeH * scale * k * (1 + dY), ar };
+}
+// the body without its jelly: what the rail and the float height are
+// measured against, so neither breathes with a squash
+function baseHalf() {
+  const R = 0.13;
+  const ar = canvas.width / canvas.height;
+  const k = respK();
+  return { hw: R * P.shapeW * k / ar, hh: R * P.shapeH * k, ar };
+}
+// the body sits on the bar like a bead on a wire, the bar running
+// through its middle. a hand nearby lifts it a little off the wire, and
+// the shadow that appears on the bar is what tells you it left
+function floatY() {
+  const { hh } = baseHalf();
+  return TRACK_Y + hh * 0.07 * lift;
+}
+
+function drawPlate() {
+  const w = tex2d.width, h = tex2d.height;
+  const T = ANTE_THEMES[anteTheme];
+  ctx.fillStyle = T.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // the bar. two states, like every slider: the stretch behind the body
+  // is filled, the stretch ahead of it is a quarter present. fourteen
+  // css pixels, whatever the plate's scale
+  // not a line, a scale: many thin vertical strokes, one css pixel
+  // wide on a five pixel pitch, whole pixels only. behind the body they
+  // are lit, ahead of it a quarter present. every stroke stands at full
+  // height; a capsule mask over the whole row cuts the ends round
+  const sx = w / canvas.width;
+  const barH = Math.max(2, Math.round(14 * dpr * sx));
+  const sw = Math.max(1, Math.round(dpr * sx));
+  const pitch = Math.max(2, Math.round(5 * dpr * sx));
+  const x0 = Math.round(barL() * w), x1 = Math.round(barR() * w);
+  const yt = Math.round((1 - TRACK_Y) * h) - Math.round(barH / 2);
+  const n = Math.floor((x1 - x0 - pitch) / pitch);
+  const xs = Math.round(x0 + ((x1 - x0) - n * pitch) / 2);
+  const bx = lx * w;
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x0, yt, x1 - x0, barH, barH / 2);
+  ctx.clip();
+  ctx.fillStyle = T.fg;
+  for (let i = 0; i <= n; i++) {
+    const x = xs + i * pitch;
+    ctx.globalAlpha = x <= bx ? 1 : 0.25;
+    ctx.fillRect(x - Math.floor(sw / 2), yt, sw, barH);
+  }
+  ctx.restore();
+
+  // the wheel: one column of digits, the current one at the centre.
+  // it only exists inside the body, and it hangs a hair behind the
+  // body and tips with it, the way the marks in the glass drop do
+  const cx = lx * w, cy = (1 - ly) * h;
+  const { hw, hh } = lensHalf();
+  const step = hh * h * 1.55;
+  const fs = Math.round(hh * h * 1.05);
+  ctx.font = '600 ' + fs + 'px ui-sans-serif, system-ui, -apple-system, Helvetica, Arial, sans-serif';
+  ctx.fillStyle = T.fg;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.save();
+  const cw = hw * w * 2.15, ch = hh * h * 2.0;
+  ctx.beginPath();
+  ctx.roundRect(cx - cw / 2, cy - ch / 2, cw, ch, ch / 2);
+  ctx.clip();
+  // the wire runs through the bead, that is what the lens is for. where
+  // the digit crosses the bar it would vanish, white on white, so it
+  // carries a soft shadow in the plate's own colour. on the black it is
+  // invisible, on the bar it is just enough
+  ctx.fillStyle = T.fg;
+  ctx.shadowColor = T.bg;
+  ctx.shadowBlur = fs * 0.34;
+  ctx.shadowOffsetY = fs * 0.05;
+  const mxp = mx * w;
+  ctx.translate(mxp, cy);
+  ctx.rotate(mrot);
+  for (let v = 0; v <= MAXV; v++) {
+    const y = (wheel - v) * step;
+    if (y < -ch || y > ch) continue;
+    ctx.fillText(String(v), 0, y);
+  }
+  ctx.restore();
+}
+
+let uploads = 0;   // how often the plate went to the gpu. a still drop adds nothing
+function uploadPlate() {
+  uploads++;
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
+}
+
+// ============================================================
+// physics. one body on a rail. the whole system is the argument
+// between the hand, the slot it is nearest to, and the jelly
+// ============================================================
+let lx = 0.25, ly = 0.5, vx = 0, vy = 0;
+let tx = lx, ty = ly;                     // where the hand wants it
+let dragging = false, grabX = 0, downMx = 0, downMy = 0;
+let dX = 0, dXv = 0, dY = 0, dYv = 0;     // the body's jelly
+let lurch = 0, lurchV = 0;                // the sideways blob on a click
+let lift = 0, liftV = 0;                  // how high it floats, springed
+let mx = lx, mvx = 0, mrot = 0, mrotV = 0; // the digit's own lag and tip
+let hov = 0, hovT = 0, hovV = 0;
+let scale = 1, scaleT = 1, scaleV = 0;
+
+function overLens(px, py) {
+  const { hw, hh, ar } = lensHalf();
+  return Math.abs(px - lx) < hw + 0.02 / ar && Math.abs(py - ly) < hh + 0.02;
+}
+function overBar(px, py) {
+  const { hh } = baseHalf();
+  return px > barL() && px < barR() && Math.abs(py - TRACK_Y) < Math.max(hh * 0.9, 0.035);
+}
+
+// the value moved by one: the wheel is thrown, not set, and the body
+// answers on the side it came from
+function clicked(dir, strength) {
+  wheelV += -dir * 5.2 * strength;
+  lurchV += dir * 0.9 * strength;
+  dXv -= 1.5 * strength;
+  dYv += 0.9 * strength;
+}
+function step(dir) {
+  const nv = Math.max(0, Math.min(MAXV, value + dir));
+  if (nv === value) return;
+  value = nv;
+  clicked(dir, 1);
+}
+
+addEventListener('pointermove', e => {
+  const px = e.clientX / innerWidth, py = 1 - e.clientY / innerHeight;
+  if (dragging) { tx = px - grabX; return; }
+  const inside = overLens(px, py);
+  if (inside && !hovT) { dYv += 1.4; dXv += 1.1; }
+  if (!inside && hovT) { dYv -= 0.9; dXv -= 0.7; }
+  hovT = inside ? 1 : 0;
+  canvas.style.cursor = inside ? 'grab' : overBar(px, py) ? 'pointer' : 'crosshair';
+});
+
+canvas.addEventListener('pointerdown', e => {
+  const px = e.clientX / innerWidth, py = 1 - e.clientY / innerHeight;
+  if (overLens(px, py)) {
+    dragging = true;
+    grabX = px - lx;
+    tx = lx;
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = 'grabbing';
+    downMx = px; downMy = py;
+    dYv -= 1.1; dXv -= 0.5;
+    return;
+  }
+  if (overBar(px, py)) {
+    // a tap on the rail: the body flies to that slot on its own
+    const nv = valueAt(px);
+    if (nv !== value) { const dir = Math.sign(nv - value); value = nv; clicked(dir, 1); }
+  }
+});
+addEventListener('pointerup', e => {
+  if (!dragging) return;
+  dragging = false;
+  canvas.style.cursor = 'grab';
+  dYv += 1.5; dXv += 0.7;
+  // let go: the slot nearest the hand wins, not the body, which is
+  // still catching up. the springs carry the body there
+  const nv = valueAt(tx);
+  if (nv !== value) { const dir = Math.sign(nv - value); value = nv; clicked(dir, 0.6); }
+});
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === '+') step(1);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === '-') step(-1);
+});
+addEventListener('wheel', e => {
+  if (Math.abs(e.deltaY) < 4) return;
+  const now = performance.now();
+  if (now - (addEventListener.last || 0) < 140) return;
+  addEventListener.last = now;
+  step(e.deltaY > 0 ? -1 : 1);
+}, { passive: true });
+
+// the digit hangs in the body rather than sitting on it: it trails by
+// a hair and tips with the trail. the same whisper as the marks in the
+// glass drop, a touch more because this mark is bigger and travels
+function markPhysics(dt) {
+  const pk = 1100, pd = 2 * Math.sqrt(pk) * 0.80;
+  mvx += (pk * (lx - mx) - pd * mvx) * dt;
+  mx += mvx * dt;
+  const { hw } = lensHalf();
+  const lim = hw * 0.07;
+  let ox = mx - lx;
+  if (Math.abs(ox) > lim) { mx = lx + Math.sign(ox) * lim; mvx *= 0.5; ox = mx - lx; }
+  const rt = Math.max(-0.035, Math.min(0.035, ox * 38));
+  const rk = 220, rd = 2 * Math.sqrt(rk) * 0.80;
+  mrotV += (rk * (rt - mrot) - rd * mrotV) * dt;
+  mrot += mrotV * dt;
+  if (Math.abs(mx - lx) < 2e-5 && Math.abs(mvx) < 2e-4) { mx = lx; mvx = 0; }
+  if (Math.abs(mrot) < 2e-4 && Math.abs(mrotV) < 2e-3) { mrot = 0; mrotV = 0; }
+}
+
+function physics(dt) {
+  if (!(canvas.width > 0 && canvas.height > 0)) return;
+
+  // how high it floats: up when the hand is near, back down when not
+  const liftT = (hovT || dragging) ? 1 : 0;
+  liftV += (60 * (liftT - lift) - 2 * Math.sqrt(60) * 0.7 * liftV) * dt;
+  lift += liftV * dt;
+
+  // the body's home is the slot of the current value. pulling it away
+  // is an argument with a spring that stiffens the further you get:
+  // under the hand that is the detent, released it is the snap
+  const homeX = slotX(value), homeY = floatY();
+  const hx = lx - homeX, hy = ly - homeY;
+  const ka = 150 + 2400 * hx * hx;
+  if (dragging) {
+    const k = 420, d = 2 * Math.sqrt(k);
+    vx += (k * (tx - lx) - d * vx) * dt;
+    vx += -ka * hx * dt * 0.5;
+    // the value follows the body while it is held, one click per slot.
+    // with hysteresis: the next slot only takes over once the body is
+    // well past the midpoint. on the midpoint itself the detent and the
+    // hand pull against each other, the value would flip every frame,
+    // and every flip is a kick. that is the shiver
+    const sw = trackSpan() / MAXV;
+    while (value < MAXV && lx > slotX(value) + sw * 0.68) { value++; clicked(1, 0.55); }
+    while (value > 0 && lx < slotX(value) - sw * 0.68) { value--; clicked(-1, 0.55); }
+  } else {
+    const dmp = 2 * Math.sqrt(ka) * 0.32;
+    vx += (-ka * hx - dmp * vx) * dt;
+  }
+  // height is never argued about, it only ever settles
+  { const ky = 220, kd = 2 * Math.sqrt(ky) * 0.62; vy += (-ky * hy - kd * vy) * dt; }
+  lx += vx * dt;
+  ly += vy * dt;
+
+  // the ends of the rail are walls. an impact keeps most of the speed
+  // and dumps the rest into the body as squash
+  const rest = 0.58, kick = 0.55;
+  const L = trackL(), R = trackR();
+  if (lx < L) { lx = L; if (vx < 0) { dXv -= Math.min(-vx * kick, 3); dYv += Math.min(-vx * kick * 0.7, 2); vx = -vx * rest; } }
+  if (lx > R) { lx = R; if (vx > 0) { dXv -= Math.min(vx * kick, 3);  dYv += Math.min(vx * kick * 0.7, 2);  vx = -vx * rest; } }
+
+  // the value wheel. stiff and underdamped, so it snaps past the digit
+  // and comes back, like a picker that has been flicked
+  const wk = 210, wd = 2 * Math.sqrt(210) * 0.52;
+  wheelV += (wk * (value - wheel) - wd * wheelV) * dt;
+  wheel += wheelV * dt;
+
+  // the sideways blob after a click
+  lurchV += (-260 * lurch - 2 * Math.sqrt(260) * 0.42 * lurchV) * dt;
+  lurch += lurchV * dt;
+
+  // the body's jelly, underdamped so it rings a few times
+  const jk = 90, jd = 2 * Math.sqrt(90) * 0.5;
+  const tX = dragging ? -0.07 : hovT * 0.10;
+  const tY = dragging ? -0.13 : hovT * 0.12;
+  dXv += (-jk * (dX - tX) - jd * dXv) * dt; dX += dXv * dt;
+  dYv += (-jk * (dY - tY) - jd * dYv) * dt; dY += dYv * dt;
+
+  // a spring never quite arrives, and a plate that is redrawn for the
+  // last ten-thousandth of a pixel is redrawn forever. so once a body is
+  // close enough to still, it is still
+  if (!dragging && Math.abs(lx - homeX) < 2e-5 && Math.abs(vx) < 2e-4) { lx = homeX; vx = 0; }
+  if (Math.abs(ly - homeY) < 2e-5 && Math.abs(vy) < 2e-4) { ly = homeY; vy = 0; }
+  if (Math.abs(wheel - value) < 2e-4 && Math.abs(wheelV) < 2e-3) { wheel = value; wheelV = 0; }
+  if (Math.abs(lurch) < 2e-4 && Math.abs(lurchV) < 2e-3) { lurch = 0; lurchV = 0; }
+  if (Math.abs(lift - liftT) < 2e-4 && Math.abs(liftV) < 2e-3) { lift = liftT; liftV = 0; }
+  if (Math.abs(dX - tX) < 2e-4 && Math.abs(dXv) < 2e-3) { dX = tX; dXv = 0; }
+  if (Math.abs(dY - tY) < 2e-4 && Math.abs(dYv) < 2e-3) { dY = tY; dYv = 0; }
+}
+
+// the stretch is read off the state, never stored: speed along the rail
+// or a fresh click pulls the body long and the sum stays volume neutral
+function deformNow() {
+  const sx = Math.min(Math.abs(lurch) * 0.55, 0.16)
+           + Math.min(Math.abs(vx) * 0.22, 0.20) + Math.min(Math.abs(lx - slotX(value)) * 0.9, 0.22);
+  const sy = Math.min(Math.abs(wheelV) * 0.012, 0.14)
+           + Math.min(Math.abs(vy) * 0.22, 0.20);
+  const ux = Math.max(-0.30, Math.min(0.35, dX + sx - sy * 0.6));
+  const uy = Math.max(-0.30, Math.min(0.35, dY + sy - sx * 0.6));
+  return [ux, uy];
+}
+
+addEventListener('message', e => {
+  if (e.data && e.data.anteTheme) {
+    anteTheme = e.data.anteTheme;
+    plateDirty = true;
+  }
+});
+
+// sizing is split in two: the canvas follows every frame because it is
+// cheap, the plate waits until the size holds still because it is not
+let plateStale = true, sizeAt = 0;
+function sizeCanvas() {
+  dpr = Math.min(devicePixelRatio, 2);
+  const w = Math.max(1, Math.round(innerWidth * dpr));
+  const h = Math.max(1, Math.round(innerHeight * dpr));
+  if (canvas.width === w && canvas.height === h) return;
+  canvas.width = w; canvas.height = h;
+  gl.viewport(0, 0, w, h);
+  plateStale = true;
+  sizeAt = performance.now();
+}
+function resize() {
+  sizeCanvas();
+  rebuildPlate();
+}
+function rebuildPlate() {
+  plateStale = false;
+  const capW = Math.min(canvas.width, 1600);
+  tex2d.width = capW;
+  tex2d.height = Math.max(1, Math.round(capW * canvas.height / canvas.width));
+  plateDirty = true;
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); }, false);
+canvas.addEventListener('webglcontextrestored', () => { location.reload(); }, false);
+addEventListener('resize', resize);
+resize();
+setTimeout(resize, 300);
+setTimeout(resize, 1200);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resize(); });
+
+// the host asks for the drop to come home before it shrinks the
+// window: back to zero, hand and hover let go, busy until still
+window.__recall = () => {
+  hovT = 0;
+  dragging = false;
+  const had = value !== 0 || Math.abs(lx - slotX(0)) > 0.004;
+  value = 0;
+  return had;
+};
+window.__busy = () =>
+  Math.abs(wheel - value) > 0.02 || Math.abs(wheelV) > 0.15 ||
+  Math.abs(lx - slotX(value)) > 0.004 ||
+  Math.abs(vx) > 0.02 || Math.abs(vy) > 0.02 ||
+  Math.abs(dX) > 0.03 || Math.abs(dY) > 0.03 ||
+  Math.abs(lurch) > 0.02 || lift > 0.02;
+
+// the host closes the window on a tap unless the drop claims the spot
+window.__solid = (px, py) => overLens(px, py) || overBar(px, py);
+
+let last = performance.now();
+let paused = false, hostPaused = false, rafPending = false;
+function refreshPause() {
+  const p = hostPaused || document.hidden;
+  if (p === paused) return;
+  paused = p;
+  if (!paused && !rafPending) {
+    last = performance.now();
+    rafPending = true;
+    requestAnimationFrame(frame);
+  }
+}
+addEventListener('message', e => {
+  if (e.data && typeof e.data.antePause === 'boolean') { hostPaused = e.data.antePause; refreshPause(); }
+});
+document.addEventListener('visibilitychange', refreshPause);
+
+function frame(t) {
+  rafPending = false;
+  if (paused) return;
+  const now = performance.now();
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  sizeCanvas();
+  if (plateStale && performance.now() - sizeAt > 120) rebuildPlate();
+  physics(dt);
+  markPhysics(dt);
+
+  scaleV += (scaleT - scale) * 0.045 - scaleV * 0.26;
+  scale += scaleV;
+  scaleT = dragging ? 1.02 : hovT ? 1.03 : 1;
+  hovV += ((dragging ? 0 : hovT) - hov) * 0.030 - hovV * 0.24;
+  hov += hovV;
+
+  // the plate is only redrawn while something on it moves
+  const sig = wheel.toFixed(3) + lx.toFixed(4) + ly.toFixed(4) + mx.toFixed(4) + mrot.toFixed(3)
+            + dX.toFixed(3) + dY.toFixed(3) + scale.toFixed(3) + anteTheme;
+  if (plateDirty || sig !== lastSig) {
+    drawPlate();
+    uploadPlate();
+    lastSig = sig;
+    plateDirty = false;
+  }
+
+  gl.uniform1f(uHover, Math.max(0, hov));
+  gl.uniform1fv(uDropHov, [0, 0, 0]);
+  gl.uniform1f(uScale, scale);
+  for (const k in DEFAULTS) gl.uniform1f(U[k], P[k]);
+  gl.uniform1f(uShadowUpLoc, 1.0);
+  // the body sits on a bar, so its cast has somewhere to land. denser
+  // than in the other drops, where it only ever fell on black
+  gl.uniform1f(U.shadow, anteTheme === 'light' ? 0.42 : 0.58);
+  gl.uniform1f(U.smoke, anteTheme === 'light' ? 0.18 : 0.35);
+
+  gl.uniform2f(uPan, 0.0, 0.0);
+  gl.uniform1i(uTex, 0);
+  gl.uniform2f(uRes, canvas.width, canvas.height);
+  gl.uniform1f(uTime, t * 0.001);
+
+  const k = respK();
+  const bodyX = lx + lurch * 0.012;
+  gl.uniform2f(uLens, bodyX, ly);
+  gl.uniform1f(uRU, 0.13 * k);
+  gl.uniform2fv(uDeform, deformNow());
+  gl.uniform2fv(uDrops, [0.5, -1, 0.5, -1, 0.5, -1]);
+  gl.uniform1fv(uDropRs, [0, 0, 0]);
+  gl.uniform1f(uNeckU, 0.05 * k);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  rafPending = true;
+  requestAnimationFrame(frame);
+}
+rafPending = true;
+requestAnimationFrame(frame);
+refreshPause();
+</script>
+</body>
+</html>
