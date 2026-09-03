@@ -543,9 +543,15 @@ let plateDirty = true, lastWheel = -999, lastRads = [-1, -1], lastPos = [-1, -1]
 // threshold, and the trail arrives in steps instead of as a movement
 let lastSc = [-1, -1], lastRot = [-1, -1], lastMark = [-1, -1, -1, -1];
 
-function drawPlate() {
+// the ground under the wheel and the signs does not change while a body
+// moves, so it is composed once per size and blitted after that
+const bgPlate = document.createElement('canvas');
+const bctx = bgPlate.getContext('2d');
+function buildGround() {
   const w = tex2d.width, h = tex2d.height;
   const T = ANTE_THEMES[anteTheme];
+  bgPlate.width = w; bgPlate.height = h;
+  const ctx = bctx;
   ctx.fillStyle = T.bg;
   ctx.fillRect(0, 0, w, h);
 
@@ -588,6 +594,19 @@ function drawPlate() {
     }
   }
 
+}
+
+function drawPlate() {
+  const w = tex2d.width, h = tex2d.height;
+  ctx.drawImage(bgPlate, 0, 0);
+  pctx = ctx; poff = 0;
+  drawFace(w, h, ANTE_THEMES[anteTheme]);
+}
+
+// the wheel and the signs, on whatever surface is handed to them
+let pctx = null, poff = 0;
+function drawFace(w, h, T) {
+  const ctx = pctx;
   ctx.fillStyle = T.fg;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -595,7 +614,7 @@ function drawPlate() {
   // the wheel: one column of digits, the current one at the centre.
   // it runs past the body and the body only ever shows the slice it
   // happens to sit on, the way a mechanical counter does
-  const cx = lx * w, cy = (1 - ly) * h;
+  const cx = lx * w, cy = (1 - ly) * h - poff;
   const { hw, hh } = lensHalf();
   const step = hh * h * 1.55;             // distance between two values
   const fs = Math.round(hh * h * 1.05);
@@ -626,12 +645,39 @@ function drawPlate() {
     const th = Math.max(2, r * 0.115 * sc);
     ctx.save();
     ctx.globalAlpha = Math.min(1, sc);
-    ctx.translate(D.ix * w, (1 - D.iy) * h);
+    ctx.translate(D.ix * w, (1 - D.iy) * h - poff);
     ctx.rotate(D.irot);
     ctx.fillRect(-bar / 2, -th / 2, bar, th);
     if (i === 1) ctx.fillRect(-th / 2, -bar / 2, th, bar);
     ctx.restore();
   }
+}
+
+// only the strip the wheel and the signs can touch is uploaded
+const scratch = document.createElement('canvas');
+const sctx = scratch.getContext('2d');
+function uploadStrip() {
+  const w = tex2d.width, h = tex2d.height;
+  const { hh } = lensHalf();
+  let lo = ly - hh * 3.6, hi = ly + hh * 3.6;
+  for (const D of drops) {
+    if (D.rad < 0.002) continue;
+    const r = D.rad * (1 + D.g) * 1.8;
+    lo = Math.min(lo, D.by - r); hi = Math.max(hi, D.by + r);
+  }
+  const y0 = Math.max(0, Math.floor((1 - hi) * h) - 2);
+  const y1 = Math.min(h, Math.ceil((1 - lo) * h) + 2);
+  const bh = y1 - y0;
+  if (bh <= 0) return;
+  if (scratch.width !== w) scratch.width = w;
+  if (scratch.height !== bh) scratch.height = bh;
+  sctx.clearRect(0, 0, w, bh);
+  sctx.drawImage(bgPlate, 0, y0, w, bh, 0, 0, w, bh);
+  pctx = sctx; poff = y0;
+  drawFace(w, h, ANTE_THEMES[anteTheme]);
+  pctx = ctx; poff = 0;
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, gl.RGBA, gl.UNSIGNED_BYTE, scratch);
 }
 
 function uploadPlate() {
@@ -1051,8 +1097,7 @@ function frame(t) {
       Math.abs(drops[0].iy - lastMark[2]) > 0.0002 ||
       Math.abs(drops[1].iy - lastMark[3]) > 0.0002 ||
       Math.abs(lx - lastBody[0]) > 0.0004 || Math.abs(ly - lastBody[1]) > 0.0004) {
-    drawPlate();
-    uploadPlate();
+    uploadStrip();
     lastWheel = wheel;
     lastRads = [drops[0].rad, drops[1].rad];
     lastPos = [drops[0].bx, drops[1].bx];
@@ -1098,10 +1143,10 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // ---- theme: the host's light/dark reaches into the drop ----
-function applyAnteTheme() { plateDirty = true; }
+function applyAnteTheme() { buildGround(); plateDirty = true; }
 // the plate is a file. until it lands the drop falls back to the
 // wordmark at eight percent, which on black reads as nothing at all
-function plateArrived() { plateDirty = true; }
+function plateArrived() { buildGround(); drawPlate(); uploadPlate(); plateDirty = true; }
 if (plateImg.complete && plateImg.naturalWidth) plateArrived();
 else plateImg.addEventListener('load', plateArrived, { once: true });
 applyAnteTheme();
