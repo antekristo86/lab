@@ -1024,7 +1024,29 @@ window.__solid = (mx, my) => {
 };
 
 let last = performance.now();
+// the loop can be stopped. the host stops the cards that are out of
+// view, the browser stops the whole tab when it is hidden. either way
+// nothing renders that nobody sees, and a page open in three tabs no
+// longer runs twenty four shader loops at once
+let paused = false, hostPaused = false, rafPending = false;
+function refreshPause() {
+  const p = hostPaused || document.hidden;
+  if (p === paused) return;
+  paused = p;
+  if (!paused && !rafPending) {
+    last = performance.now();          // no giant dt after the sleep
+    rafPending = true;
+    requestAnimationFrame(frame);
+  }
+}
+addEventListener('message', e => {
+  if (e.data && typeof e.data.antePause === 'boolean') { hostPaused = e.data.antePause; refreshPause(); }
+});
+document.addEventListener('visibilitychange', refreshPause);
+
 function frame(t) {
+  rafPending = false;
+  if (paused) return;
   const now = performance.now();
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
@@ -1093,9 +1115,12 @@ function frame(t) {
   gl.uniform1f(uNeckU, neck * respK());
 
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  rafPending = true;
   requestAnimationFrame(frame);
 }
+rafPending = true;
 requestAnimationFrame(frame);
+refreshPause();   // born in a hidden tab, sleep from the first frame
 
 // ---- theme: the host's light/dark reaches into the drop ----
 function applyAnteTheme() { plateDirty = true; }
