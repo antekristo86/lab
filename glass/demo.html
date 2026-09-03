@@ -1023,15 +1023,26 @@ addEventListener('message', e => {
 
 function resize() {
   dpr = Math.min(devicePixelRatio, 2);
-  canvas.width = innerWidth * dpr;
-  canvas.height = innerHeight * dpr;
-  tex2d.width = canvas.width;
-  tex2d.height = canvas.height;
+  canvas.width = Math.max(1, Math.round(innerWidth * dpr));
+  canvas.height = Math.max(1, Math.round(innerHeight * dpr));
+  // the plate is capped. it only has to survive being bent by a lens,
+  // and an uncapped one costs 14 MB of texture per context. on a phone
+  // there are eight of these contexts on the page at once, and the
+  // browser answers by throwing them away, which is the black card
+  const capW = Math.min(canvas.width, 1600);
+  tex2d.width = capW;
+  tex2d.height = Math.max(1, Math.round(capW * canvas.height / canvas.width));
   gl.viewport(0, 0, canvas.width, canvas.height);
   drawBackground();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
 }
+// a phone holds one of these contexts per card plus one for the
+// fullscreen view. when the browser runs short it takes a context away
+// and the canvas stays black for good. catching the loss lets it come
+// back instead
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); }, false);
+canvas.addEventListener('webglcontextrestored', () => { location.reload(); }, false);
 addEventListener('resize', resize);
 resize();
 // the plate is a file. until it lands the drop falls back to the
@@ -1060,6 +1071,12 @@ function plateSig() {
 
 let last = performance.now();
 function frame(t) {
+  // the drop lives in an iframe that is grown from card size to full
+  // screen. a resize event is not guaranteed to arrive for that, and
+  // without it the canvas keeps the size it had when it was parked.
+  // so ask every frame instead of waiting to be told
+  if (canvas.width !== Math.max(1, Math.round(innerWidth * dpr)) ||
+      canvas.height !== Math.max(1, Math.round(innerHeight * dpr))) resize();
   const now = performance.now();
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;

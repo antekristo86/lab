@@ -955,11 +955,20 @@ function resize() {
   // 1600 to keep the upload cheap, but the led raster is a one pixel
   // grid: the moment the shader has to scale the texture, the grid is
   // no longer on the device pixels and the whole point is gone
-  tex2d.width = canvas.width;
-  tex2d.height = canvas.height;
+  // the plate is capped: an uncapped one costs 14 MB of texture per
+  // context, and a phone holds eight of these contexts at once
+  const capW = Math.min(canvas.width, 1600);
+  tex2d.width = capW;
+  tex2d.height = Math.max(1, Math.round(capW * canvas.height / canvas.width));
   gl.viewport(0, 0, canvas.width, canvas.height);
   plateDirty = true;
 }
+// a phone holds one of these contexts per card plus one for the
+// fullscreen view. when the browser runs short it takes a context away
+// and the canvas stays black for good. catching the loss lets it come
+// back instead
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); }, false);
+canvas.addEventListener('webglcontextrestored', () => { location.reload(); }, false);
 addEventListener('resize', resize);
 resize();
 
@@ -994,6 +1003,10 @@ function frame(t) {
   const now = performance.now();
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  // the iframe is grown from card size to full screen and a resize
+  // event is not guaranteed for that. ask every frame instead
+  if (canvas.width !== Math.max(1, Math.round(innerWidth * dpr)) ||
+      canvas.height !== Math.max(1, Math.round(innerHeight * dpr))) resize();
   physics(dt);
   markPhysics(dt);
 
