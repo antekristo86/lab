@@ -931,8 +931,14 @@ function frame(t) {
   last = now;
   sizeCanvas();
   if (plateStale && performance.now() - sizeAt > 120) rebuildPlate();
-  physics(dt);
-  markPhysics(dt);
+  // the springs are stepped explicitly, and an explicit step is only
+  // honest while it is short: at thirty frames a second the digit's
+  // damping term overshoots and flips its speed every frame, at twenty
+  // the body's does too. that is the shake on a phone. so a slow frame
+  // is cut into steps no longer than a 120th of a second
+  const n = Math.max(1, Math.ceil(dt * 120));
+  const h = dt / n;
+  for (let i = 0; i < n; i++) { physics(h); markPhysics(h); }
 
   scaleV += (scaleT - scale) * 0.045 - scaleV * 0.26;
   scale += scaleV;
