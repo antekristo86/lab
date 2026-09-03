@@ -1054,8 +1054,14 @@ function frame(t) {
   // event is not guaranteed for that. ask every frame instead
   sizeCanvas();
   if (plateStale && performance.now() - sizeAt > 120) rebuildPlate();
-  physics(dt);
-  markPhysics(dt);
+  // the springs are stepped explicitly, and an explicit step is only
+  // honest while it is short: at thirty frames a second the marks'
+  // damping term overshoots and flips their speed every frame. that is
+  // the shake on a phone. so a slow frame is cut into steps no longer
+  // than a 120th of a second
+  const n = Math.max(1, Math.ceil(dt * 120));
+  const h = dt / n;
+  for (let i = 0; i < n; i++) { physics(h); markPhysics(h); }
 
   // the plate is only redrawn while something on it moves
   if (plateDirty ||
