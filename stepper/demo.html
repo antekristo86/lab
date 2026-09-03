@@ -951,10 +951,25 @@ addEventListener('message', e => {
   }
 });
 
-function resize() {
+// sizing is split in two: the canvas follows every frame because it is
+// cheap, the plate waits until the size holds still because it is not
+let plateStale = true, sizeAt = 0;
+function sizeCanvas() {
   dpr = Math.min(devicePixelRatio, 2);
-  canvas.width = Math.max(1, Math.round(innerWidth * dpr));
-  canvas.height = Math.max(1, Math.round(innerHeight * dpr));
+  const w = Math.max(1, Math.round(innerWidth * dpr));
+  const h = Math.max(1, Math.round(innerHeight * dpr));
+  if (canvas.width === w && canvas.height === h) return;
+  canvas.width = w; canvas.height = h;
+  gl.viewport(0, 0, w, h);
+  plateStale = true;
+  sizeAt = performance.now();
+}
+function resize() {
+  sizeCanvas();
+  rebuildPlate();
+}
+function rebuildPlate() {
+  plateStale = false;
   // the plate runs at full device resolution. it used to be capped at
   // 1600 to keep the upload cheap, but the led raster is a one pixel
   // grid: the moment the shader has to scale the texture, the grid is
@@ -964,7 +979,6 @@ function resize() {
   const capW = Math.min(canvas.width, 1600);
   tex2d.width = capW;
   tex2d.height = Math.max(1, Math.round(capW * canvas.height / canvas.width));
-  gl.viewport(0, 0, canvas.width, canvas.height);
   plateDirty = true;
 }
 // a phone holds one of these contexts per card plus one for the
@@ -975,6 +989,13 @@ canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); }, false)
 canvas.addEventListener('webglcontextrestored', () => { location.reload(); }, false);
 addEventListener('resize', resize);
 resize();
+// belt and braces. the drop is created inside a parked iframe and then
+// grown, and the order in which the size, the image and the first frame
+// arrive is not something it can rely on. two forced rebuilds and one
+// on becoming visible cost nothing and close every gap
+setTimeout(resize, 300);
+setTimeout(resize, 1200);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resize(); });
 
 // the host asks for the drop to come home before it shrinks the
 // window. the stepper winds back to zero, lets go of the hand and the
@@ -1009,8 +1030,8 @@ function frame(t) {
   last = now;
   // the iframe is grown from card size to full screen and a resize
   // event is not guaranteed for that. ask every frame instead
-  if (canvas.width !== Math.max(1, Math.round(innerWidth * dpr)) ||
-      canvas.height !== Math.max(1, Math.round(innerHeight * dpr))) resize();
+  sizeCanvas();
+  if (plateStale && performance.now() - sizeAt > 120) rebuildPlate();
   physics(dt);
   markPhysics(dt);
 

@@ -1025,10 +1025,32 @@ addEventListener('message', e => {
   }
 });
 
-function resize() {
+// sizing is split in two. the canvas itself is cheap and follows every
+// frame, so the composition is never wrong. rebuilding the plate is not
+// cheap: a new texture and a full upload. during the open morph the
+// frame changes sixty times a second, and doing the expensive half that
+// often is what chokes a phone. so it waits until the size holds still
+// declared up here on purpose: resize() and the image handler both
+// clear it, and both can run before the frame loop is reached. down
+// there it sat in its own dead zone and threw on the first paint
+let lastSig = '';
+let plateStale = true, sizeAt = 0;
+function sizeCanvas() {
   dpr = Math.min(devicePixelRatio, 2);
-  canvas.width = Math.max(1, Math.round(innerWidth * dpr));
-  canvas.height = Math.max(1, Math.round(innerHeight * dpr));
+  const w = Math.max(1, Math.round(innerWidth * dpr));
+  const h = Math.max(1, Math.round(innerHeight * dpr));
+  if (canvas.width === w && canvas.height === h) return;
+  canvas.width = w; canvas.height = h;
+  gl.viewport(0, 0, w, h);
+  plateStale = true;
+  sizeAt = performance.now();
+}
+function resize() {
+  sizeCanvas();
+  rebuildPlate();
+}
+function rebuildPlate() {
+  plateStale = false;
   // the plate is capped. it only has to survive being bent by a lens,
   // and an uncapped one costs 14 MB of texture per context. on a phone
   // there are eight of these contexts on the page at once, and the
@@ -1036,7 +1058,6 @@ function resize() {
   const capW = Math.min(canvas.width, 1600);
   tex2d.width = capW;
   tex2d.height = Math.max(1, Math.round(capW * canvas.height / canvas.width));
-  gl.viewport(0, 0, canvas.width, canvas.height);
   drawBackground();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
@@ -1049,6 +1070,13 @@ canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); }, false)
 canvas.addEventListener('webglcontextrestored', () => { location.reload(); }, false);
 addEventListener('resize', resize);
 resize();
+// belt and braces. the drop is created inside a parked iframe and then
+// grown, and the order in which the size, the image and the first frame
+// arrive is not something it can rely on. two forced rebuilds and one
+// on becoming visible cost nothing and close every gap
+setTimeout(resize, 300);
+setTimeout(resize, 1200);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resize(); });
 // the plate is a file. until it lands the drop falls back to the
 // wordmark at eight percent, which on black reads as nothing at all.
 // so the moment it is there, redraw for real, and cover the case where
@@ -1064,7 +1092,6 @@ else plateImg.addEventListener('load', plateArrived, { once: true });
 
 // redrawing the plate every frame would upload the whole canvas every
 // frame. it only changes when a body moves, so ask first
-let lastSig = '';
 function plateSig() {
   let x = anteTheme + open.toFixed(3) + lx.toFixed(4) + ly.toFixed(4)
         + dX.toFixed(3) + dY.toFixed(3) + scale.toFixed(3);
@@ -1079,8 +1106,8 @@ function frame(t) {
   // screen. a resize event is not guaranteed to arrive for that, and
   // without it the canvas keeps the size it had when it was parked.
   // so ask every frame instead of waiting to be told
-  if (canvas.width !== Math.max(1, Math.round(innerWidth * dpr)) ||
-      canvas.height !== Math.max(1, Math.round(innerHeight * dpr))) resize();
+  sizeCanvas();
+  if (plateStale && performance.now() - sizeAt > 120) rebuildPlate();
   const now = performance.now();
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
