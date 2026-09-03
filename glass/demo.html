@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preload" as="image" href="./plate.jpg" fetchpriority="high" />
 <title>jelly glass</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: crosshair; }
@@ -37,42 +38,6 @@ const ctx = tex2d.getContext('2d');
 const plateImg = new Image();
 plateImg.src = './plate.jpg';
 
-// the picture as an led matrix, exactly the way the wordmark on the
-// landing page is built: a dot one css pixel wide with a gap the same
-// size, so the grid is device-pixel true and nothing is ever scaled.
-// baked once per resolution, because it never changes on its own
-const ledPlate = document.createElement('canvas');
-const lctx = ledPlate.getContext('2d');
-let ledBuilt = 0;
-function buildLedPlate(w, h) {
-  if (!plateImg.complete || !plateImg.naturalWidth) return false;
-  const key = w * 100000 + h + dpr * 7;
-  if (ledBuilt === key) return true;
-  ledPlate.width = w; ledPlate.height = h;
-  lctx.clearRect(0, 0, w, h);
-  const k = Math.max(w / plateImg.naturalWidth, h / plateImg.naturalHeight);
-  const iw = Math.round(plateImg.naturalWidth * k);
-  const ih = Math.round(plateImg.naturalHeight * k);
-  lctx.drawImage(plateImg, Math.round((w - iw) / 2), Math.round((h - ih) / 2), iw, ih);
-  // one lit cell, one dark cell, both a whole css pixel
-  const dot = Math.max(1, Math.round(dpr)), period = dot * 2;
-  const tile = document.createElement('canvas');
-  tile.width = period; tile.height = period;
-  const tx = tile.getContext('2d');
-  // the raster is a quarter present, no more: the gap keeps three
-  // quarters of the picture, so the grid is a structure lying over the
-  // material rather than something that cuts it apart
-  tx.fillStyle = 'rgba(255,255,255,1)';
-  tx.fillRect(0, 0, period, period);
-  tx.fillStyle = '#fff';
-  tx.fillRect(0, 0, dot, dot);
-  lctx.globalCompositeOperation = 'destination-in';
-  lctx.fillStyle = lctx.createPattern(tile, 'repeat');
-  lctx.fillRect(0, 0, w, h);
-  lctx.globalCompositeOperation = 'source-over';
-  ledBuilt = key;
-  return true;
-}
 
 let dpr = 1;
 
@@ -98,10 +63,14 @@ function drawBackground() {
   ctx.fillRect(0, 0, w, h);
   // the wordmark lies on the plate at full width, barely there, and
   // sinks into the ground: full at the cap line, gone by the baseline
-  if (buildLedPlate(w, h)) {
+  // the photograph is the plate. cover-fitted, at full strength: the
+  // lens needs something with structure to bend
+  if (plateImg.complete && plateImg.naturalWidth) {
+    const k = Math.max(w / plateImg.naturalWidth, h / plateImg.naturalHeight);
+    const iw = plateImg.naturalWidth * k, ih = plateImg.naturalHeight * k;
     ctx.save();
     if (anteTheme === 'light') ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(ledPlate, 0, 0);
+    ctx.drawImage(plateImg, (w - iw) / 2, (h - ih) / 2, iw, ih);
     ctx.restore();
     drawGlyphs();
     return;
@@ -1065,7 +1034,18 @@ function resize() {
 }
 addEventListener('resize', resize);
 resize();
-plateImg.addEventListener('load', () => { lastSig = ''; }, { once: true });
+// the plate is a file. until it lands the drop falls back to the
+// wordmark at eight percent, which on black reads as nothing at all.
+// so the moment it is there, redraw for real, and cover the case where
+// it was already in cache before this line ran
+function plateArrived() {
+  drawBackground();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
+  lastSig = '';
+}
+if (plateImg.complete && plateImg.naturalWidth) plateArrived();
+else plateImg.addEventListener('load', plateArrived, { once: true });
 
 // redrawing the plate every frame would upload the whole canvas every
 // frame. it only changes when a body moves, so ask first
