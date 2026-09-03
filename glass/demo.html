@@ -57,15 +57,8 @@ const ANTE_THEMES = { dark: { bg: '#000000', fg: '#ffffff' }, light: { bg: '#000
 let anteTheme = 'dark';
 try { if (localStorage.getItem('anteTheme') === 'light') anteTheme = 'light'; } catch (e) {}
 
-// the ground under the marks does not change while a body moves, so it
-// is composed once per size and blitted after that. rebuilding it per
-// frame meant re-decoding the photograph sixty times a second
-const bgPlate = document.createElement('canvas');
-const bctx = bgPlate.getContext('2d');
-function buildGround() {
+function drawBackground() {
   const w = tex2d.width, h = tex2d.height;
-  bgPlate.width = w; bgPlate.height = h;
-  const ctx = bctx;
   ctx.fillStyle = ANTE_THEMES[anteTheme].bg;
   ctx.fillRect(0, 0, w, h);
   // the wordmark lies on the plate at full width, barely there, and
@@ -83,6 +76,7 @@ function buildGround() {
     if (anteTheme === 'light') ctx.globalCompositeOperation = 'lighter';
     ctx.drawImage(plateImg, (w - iw) / 2, (h - ih) / 2, iw, ih);
     ctx.restore();
+    drawGlyphs();
     return;
   }
   const sc = w / 545;
@@ -104,41 +98,7 @@ function buildGround() {
   ctx.fillStyle = g;
   for (const d of JELLY) ctx.fill(new Path2D(d));
   ctx.restore();
-}
-
-function drawBackground() {
-  ctx.drawImage(bgPlate, 0, 0);
-  gctx = ctx; goff = 0;
   drawGlyphs();
-}
-
-// the strip: the only part of the plate the marks can ever touch. the
-// ground under it comes from the cache, the marks go on top, and just
-// that strip is handed to the texture. a full upload is 14 MB a frame,
-// this is a fraction of it
-const scratch = document.createElement('canvas');
-const sctx = scratch.getContext('2d');
-function uploadStrip() {
-  const H = tex2d.height, W = tex2d.width;
-  const { hh } = lensHalf();
-  let lo = ly - hh * 2.2, hi = ly + hh * 2.2;
-  for (const D of drops) {
-    if (D.isc <= 0.01 && D.rad < 0.002) continue;
-    const r = dropEffR(D) * 1.6;
-    lo = Math.min(lo, D.iy - r); hi = Math.max(hi, D.iy + r);
-  }
-  let y0 = Math.max(0, Math.floor((1 - hi) * H) - 2);
-  let y1 = Math.min(H, Math.ceil((1 - lo) * H) + 2);
-  const bh = y1 - y0;
-  if (bh <= 0) return;
-  if (scratch.height !== bh) scratch.height = bh;
-  sctx.clearRect(0, 0, W, bh);
-  sctx.drawImage(bgPlate, 0, y0, W, bh, 0, 0, W, bh);
-  gctx = sctx; goff = y0;
-  drawGlyphs();
-  gctx = ctx; goff = 0;
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, gl.RGBA, gl.UNSIGNED_BYTE, scratch);
 }
 
 // the mark inside the button and the three inside the droplets. drawn
@@ -156,7 +116,6 @@ const LUCIDE = {
   rotate: ['M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8', 'M3 3v5h5']
 };
 function drawLucide(name, size) {
-  const ctx = gctx;
   const k = size / 24;
   ctx.save();
   ctx.scale(k, k);
@@ -168,14 +127,10 @@ function drawLucide(name, size) {
   ctx.restore();
 }
 
-// the marks are drawn twice over: once into the plate on a full rebuild,
-// once into a strip on every moving frame. so they take their surface
-let gctx = null, goff = 0;
 function drawGlyphs() {
-  const ctx = gctx;
   const th = ANTE_THEMES[anteTheme];
   const H = tex2d.height;
-  const px = (ux, uy) => [ux * tex2d.width, (1 - uy) * H - goff];
+  const px = (ux, uy) => [ux * tex2d.width, (1 - uy) * H];
   const ink = (path, lw) => {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = th.fg; ctx.fillStyle = th.fg; ctx.lineWidth = lw; path(false);
@@ -1064,7 +1019,6 @@ function deformNow() {
 addEventListener('message', e => {
   if (e.data && e.data.anteTheme) {
     anteTheme = e.data.anteTheme;
-    buildGround();
     drawBackground();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
@@ -1101,13 +1055,9 @@ function rebuildPlate() {
   // and an uncapped one costs 14 MB of texture per context. on a phone
   // there are eight of these contexts on the page at once, and the
   // browser answers by throwing them away, which is the black card
-  // full resolution. the marks are two pixel strokes, and a texture the
-  // shader has to magnify makes them crawl. the cost of that is paid
-  // back below: only the band that moves is uploaded, not the plate
-  tex2d.width = canvas.width;
-  tex2d.height = canvas.height;
-  scratch.width = tex2d.width;
-  buildGround();
+  const capW = Math.min(canvas.width, 1600);
+  tex2d.width = capW;
+  tex2d.height = Math.max(1, Math.round(capW * canvas.height / canvas.width));
   drawBackground();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
@@ -1132,7 +1082,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) resi
 // so the moment it is there, redraw for real, and cover the case where
 // it was already in cache before this line ran
 function plateArrived() {
-  buildGround();
   drawBackground();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
@@ -1172,7 +1121,9 @@ function frame(t) {
   const sig = plateSig();
   if (sig !== lastSig) {
     lastSig = sig;
-    uploadStrip();
+    drawBackground();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex2d);
   }
   // grabbing kills the glow: hover is an invitation, holding is holding
   const ht = dragging ? 0 : hovT;
