@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>take. Imprint</title>
+<meta name="description" content="Legal information for take.ante.design." />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#000000" />
+<link rel="canonical" href="https://take.ante.design/imprint" />
+<link rel="icon" type="image/png" sizes="64x64" href="favicon.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<style>
+  @font-face { font-family: 'Geist'; src: url('Geist-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+  @font-face { font-family: 'Geist'; src: url('Geist-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+  @font-face { font-family: 'TFC Bit Neue'; src: url('TFCBitNeue-Regular.otf') format('opentype'); font-display: block; }
+  :root {
+    --bg: #000; --line: #27272A; --fg: #FAFAFA; --fg2: #A1A1AA; --fg3: #83838C;
+    --gutter: 20px;
+    color-scheme: dark;
+  }
+  @media (min-width: 768px) { :root { --gutter: 40px; } }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 15px; line-height: 24px; color: var(--fg2);
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  }
+  body, body * { cursor: crosshair; }
+  a, a * { cursor: pointer; }
+  ::selection { background: var(--fg); color: var(--bg); }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; border-radius: 6px; }
+  .wrap {
+    width: 100%; max-width: calc(1120px + var(--gutter) * 2); margin: 0 auto;
+    padding-left: max(var(--gutter), env(safe-area-inset-left));
+    padding-right: max(var(--gutter), env(safe-area-inset-right));
+  }
+  nav .wrap { height: 60px; display: flex; align-items: center; }
+  .home { display: inline-flex; align-items: center; height: 44px; padding-right: 8px; color: var(--fg); text-decoration: none; }
+  .word { font-family: 'TFC Bit Neue', ui-monospace, monospace; font-size: 20px; line-height: 1; }
+  main .wrap { padding-top: clamp(56px, 9vw, 120px); padding-bottom: max(96px, env(safe-area-inset-bottom)); }
+  article { max-width: 34em; }
+  h1 { margin: 0 0 24px; font-size: 15px; line-height: 24px; font-weight: 500; color: var(--fg); }
+  h2 { margin: 24px 0 0; font-size: 15px; line-height: 24px; font-weight: 500; color: var(--fg); }
+  p { margin: 0; }
+  .addr { margin: 0 0 24px; color: var(--fg); }
+  a { color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--fg3); }
+  a:hover { border-color: var(--fg); }
+  .home { border: 0; }
+</style>
+</head>
+<body>
+<nav aria-label="take">
+  <div class="wrap"><a class="home" href="demo.html" aria-label="take, back to the page"><span class="word">take</span></a></div>
+</nav>
+<main>
+  <div class="wrap">
+    <article>
+      <h1>Legal information</h1>
+      <p>Information pursuant to Section 5 of the German Digital Services Act (Digitale-Dienste-Gesetz, DDG):</p>
+      <p class="addr">Ante Kristo<br />Franz-Albert-Str. 64<br />80999 München<br />Germany</p>
+      <p>Represented by: Ante Kristo</p>
+      <p>Contact: <a href="mailto:hello@antekristo.com">hello@antekristo.com</a></p>
+      <h2>Liability for Content</h2>
+      <p>We created the content of our website with utmost diligence. Nevertheless, we cannot guarantee the accuracy, completeness of the content or that the content is up-to-date. Pursuant to Section 7 (1) DDG, as a service provider, we are responsible for our own content on this website in accordance with general laws. However, pursuant to Sections 8 to 10 DDG, we, as a service provider, are neither obliged to monitor any transmitted or stored third-party information nor do we have to investigate any circumstances that may indicate an illegal activity. Obligations to remove or block the use of this information under general laws remain unaffected. However, we are only liable from the time of knowing about a specific infringement. As soon as we become aware of such violations, we will remove the respective content immediately.</p>
+      <h2>Liability for Links</h2>
+      <p>Our offer contains links to external third-party websites. We have no influence on their content. Therefore, we cannot assume any liability for such external content. The respective provider or operator of such third-party websites remains responsible for their content. If we become aware of a legal violation, we will remove the link immediately.</p>
+    </article>
+  </div>
+</main>
+</body>
+</html>

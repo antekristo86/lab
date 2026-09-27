@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>take</string>
+	<key>CFBundleExecutable</key>
+	<string>take</string>
+	<key>CFBundleIconFile</key>
+	<string>take</string>
+	<key>CFBundleIdentifier</key>
+	<string>design.ante.take</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>take</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.video</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>take shows and records your camera.</string>
+	<key>NSCameraUseContinuityCameraDeviceType</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Ante Kristo</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>take records your microphone.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>take saves your recordings to this drive.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>take listens on this Mac to follow your script and to hear take start, take again, take end and take reset. Nothing leaves this Mac.</string>
+</dict>
+</plist>
