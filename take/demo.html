@@ -6,7 +6,7 @@
 <title>take. A free Mac recorder that listens.</title>
 <script>
   /* Release facts. The only place they live. Filled at release time. */
-  window.RELEASE = { version: '1.0', dmgMB: '1.6' };
+  window.RELEASE = { version: '1.1', dmgMB: '1.6' };
   (function (d) {
     d.classList.add('js');
     /* inside ante.design the site's frame carries the name and the count, the page's own bar steps aside */
@@ -50,7 +50,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "take",
-  "description": "A free Mac recorder with a teleprompter that follows your voice. Records HEVC in 9:16, 4:5, 1:1 or 16:9. Spoken commands, on-device speech recognition, no account, no analytics, no network requests.",
+  "description": "A free Mac recorder with a teleprompter that follows your voice. Records HEVC in 9:16, 4:5, 1:1 or 16:9. Spoken commands, on-device speech recognition, no account, no analytics. No network requests unless you turn on update checks.",
   "operatingSystem": "macOS 14+",
   "applicationCategory": "MultimediaApplication",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
@@ -689,7 +689,7 @@
           <li><span>Speech recognition runs on your Mac.</span><span class="mono">requiresOnDeviceRecognition</span></li>
           <li><span>No account.</span></li>
           <li><span>No analytics.</span></li>
-          <li><span>No network requests.</span></li>
+          <li><span>No network requests, unless you turn on update checks.</span><span class="mono">off by default</span></li>
         </ul>
         <p class="note">This page has no analytics either.</p>
       </div>
@@ -700,16 +700,14 @@
     <div class="wrap split">
       <div>
         <h2 id="install-h">First launch.</h2>
-        <p class="sub">take is not notarized yet, so macOS asks you to confirm it once.</p>
+        <p class="sub">Signed and notarized by Apple. It opens like any other app.</p>
       </div>
       <div>
         <ol class="steps">
           <li><span>Open take.dmg and drag take to Applications.</span></li>
-          <li><span>Open take. macOS stops it the first time.</span></li>
-          <li><span>In <span class="ui">System Settings</span> <span class="sep" aria-hidden="true">›</span> <span class="ui">Privacy &amp; Security</span>, click <span class="ui">Open Anyway</span> and confirm.</span></li>
+          <li><span>Open take.</span></li>
           <li><span>Allow camera, microphone and speech recognition.</span></li>
         </ol>
-        <p class="note">On macOS 14 you can also Control-click the app and choose Open.</p>
         <p class="note">take listens in English or German. If it says Voice is off, add the language under Keyboard › Dictation in System Settings.</p>
         <div class="again">
           <a class="btn" href="https://take.ante.design/take.dmg" download>

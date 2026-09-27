@@ -60,8 +60,8 @@ Needs Xcode or the Command Line Tools. Builds for this Mac and signs with the Ap
 
     ./release.sh
 
-Builds a universal take.app (Apple silicon and Intel, macOS 14 or later), ad-hoc signed with the hardened runtime, and packs `dist/take.dmg` with an Applications shortcut. Not notarized: the first launch needs Open Anyway under System Settings, Privacy & Security. Writes size and SHA-256 to `dist/release.json`. Every run produces different DMG bytes, so take both from that file, never by hand.
+Builds a universal take.app (Apple silicon and Intel, macOS 14 or later), signed with the hardened runtime, and packs `dist/take.dmg` with an Applications shortcut. Signed with the Developer ID and notarized when the certificate and the notary profile `take-notary` are on the Mac, ad-hoc otherwise.
 
-No account, no analytics, no network requests. Settings live in the user defaults under `design.ante.take`. Geist is under the SIL Open Font License, see `Resources/Fonts-OFL.txt`.
+No account, no analytics. No network requests, unless you turn on Check for updates in the sidebar: then take asks https://take.ante.design/version.json for the current version at launch and at most once a day, and shows a link when there is a newer one. Nothing is downloaded or installed. Settings live in the user defaults under `design.ante.take`. Geist is under the SIL Open Font License, see `Resources/Fonts-OFL.txt`.
 
 Made with Claude Code.

@@ -107,6 +107,15 @@ enum D {
         get { d.object(forKey: "voiceCommands") as? Bool ?? true }
         set { d.set(newValue, forKey: "voiceCommands") }
     }
+    /// Off unless turned on in the sidebar: the only setting that lets take use the network.
+    static var updateCheck: Bool {
+        get { d.bool(forKey: "updateCheck") }
+        set { d.set(newValue, forKey: "updateCheck") }
+    }
+    static var lastUpdateCheck: Double {
+        get { d.double(forKey: "lastUpdateCheck") }
+        set { d.set(newValue, forKey: "lastUpdateCheck") }
+    }
     static var video: String? { get { d.string(forKey: "video") } set { d.set(newValue, forKey: "video") } }
     static var audio: String? { get { d.string(forKey: "audio") } set { d.set(newValue, forKey: "audio") } }
     static var folder: String? { get { d.string(forKey: "folder") } set { d.set(newValue, forKey: "folder") } }
@@ -251,6 +260,9 @@ final class Model {
     var promptMode: PromptMode = PromptMode(rawValue: D.promptMode) ?? .voice
     var voiceCommands = D.voiceCommands
     var keepEnd = D.keepEnd
+    var updateCheck = D.updateCheck
+    /// A newer version seen on take.ante.design, shown in the sidebar until this app is updated.
+    var updateAvailable: String?
     var listening = false
     var countdown: Int?
     var scriptVersion = 0
@@ -297,6 +309,8 @@ final class Model {
     @ObservationIgnored private var takeStartOffset: CGFloat = 0
     @ObservationIgnored private var badQueue: [Toast] = []
     @ObservationIgnored private var fpsWarned = ""
+    @ObservationIgnored private let updater = Updater()
+    @ObservationIgnored private var updateTimer: Timer?
 
     init() {
         folder = Model.defaultFolder()
@@ -323,6 +337,7 @@ final class Model {
         listener.onLog = { lg.write($0) }
         engine.onLog = { lg.write($0) }
         tracker.load(script)
+        startUpdateChecks()
         // First launch: the onboarding script says "read this out loud and watch it keep up", so it has to be following already.
         if D.d.object(forKey: "script") == nil && promptMode == .voice {
             prompt.running = true
@@ -507,6 +522,37 @@ final class Model {
         keepEnd.toggle()
         D.keepEnd = keepEnd
     }
+
+    func toggleUpdateCheck() {
+        updateCheck.toggle()
+        D.updateCheck = updateCheck
+        if updateCheck { checkForUpdate(force: true) } else { updateAvailable = nil }
+        startUpdateChecks()
+    }
+
+    /// While the switch is on: a check at launch, then the timer looks every hour whether a day has passed.
+    private func startUpdateChecks() {
+        updateTimer?.invalidate()
+        updateTimer = nil
+        guard updateCheck else { return }
+        checkForUpdate(force: false)
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in self?.checkForUpdate(force: false) }
+    }
+
+    private func checkForUpdate(force: Bool) {
+        let now = Date().timeIntervalSince1970
+        guard updateCheck, force || now - D.lastUpdateCheck >= Updater.interval else { return }
+        D.lastUpdateCheck = now
+        updater.check { [weak self] newer in
+            guard let self, updateCheck else { return }
+            let wasKnown = updateAvailable == newer
+            updateAvailable = newer
+            if let v = newer, !wasKnown { say("take \(v) is out", "Download it from take.ante.design.") }
+            else if newer == nil && force { say("take is up to date", "Version \(Updater.currentVersion).") }
+        }
+    }
+
+    func openUpdatePage() { NSWorkspace.shared.open(Updater.site) }
 
     func toggleVoiceCommands() {
         voiceCommands.toggle()
@@ -1710,6 +1756,33 @@ struct Sidebar: View {
                         }
                         .buttonStyle(.plain)
                         .help("Show in Finder")
+                    }
+                }
+
+                divider
+
+                section {
+                    HStack(spacing: 8) {
+                        Text("Check for updates").font(.geist(13)).foregroundStyle(Color.mutedFg).fixedSize()
+                        Spacer(minLength: 0)
+                        Switch(on: model.updateCheck) { model.toggleUpdateCheck() }
+                    }
+                    .frame(height: 20)
+                    if let v = model.updateAvailable {
+                        Button { model.openUpdatePage() } label: {
+                            HStack(spacing: 6) {
+                                Text("take \(v) is out").font(.geist(12, .medium)).foregroundStyle(Color.fg)
+                                Spacer(minLength: 0)
+                                Text("take.ante.design").font(.geist(12)).foregroundStyle(Color.mutedFg)
+                                Image(systemName: "arrow.up.forward").font(.system(size: 10, weight: .medium)).foregroundStyle(Color.mutedFg)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(model.updateCheck ? "Asks take.ante.design once a day. Version \(Updater.currentVersion)." : "Off: take makes no network requests. Version \(Updater.currentVersion).")
+                            .font(.geist(12)).foregroundStyle(Color.subtle)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
